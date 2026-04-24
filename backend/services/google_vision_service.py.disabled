@@ -1,0 +1,107 @@
+import os
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+class GoogleVisionError(Exception):
+    """Custom exception for Google Vision API errors"""
+    pass
+
+def perform_ocr(image_bytes: bytes) -> str:
+    """
+    Call Google Cloud Vision API to perform DOCUMENT_TEXT_DETECTION and return full text.
+    
+    Uses the official Google Cloud Vision client library with API key authentication.
+    Reads API key from env var GOOGLE_VISION_API_KEY.
+    
+    Raises GoogleVisionError on any failure.
+    """
+    api_key = os.getenv("GOOGLE_VISION_API_KEY")
+    if not api_key:
+        raise GoogleVisionError("Missing GOOGLE_VISION_API_KEY")
+
+    try:
+        # Import Google Cloud Vision client
+        from google.cloud import vision
+        from google.oauth2 import service_account
+        import tempfile
+        import json
+        
+        # Create a temporary service account key file for API key authentication
+        # This is a workaround since the official client expects service account credentials
+        # but we want to use API key authentication
+        
+        # Fallback to REST API approach for API key authentication
+        import base64
+        import requests
+        
+        VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate"
+        
+        # Base64 encode the image bytes
+        content_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        payload = {
+            "requests": [
+                {
+                    "image": {"content": content_b64},
+                    "features": [{"type": "DOCUMENT_TEXT_DETECTION"}]
+                }
+            ]
+        }
+
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': api_key
+            }
+            
+            resp = requests.post(
+                VISION_API_URL,
+                json=payload,
+                headers=headers,
+                timeout=60,
+            )
+            
+            if resp.status_code == 403:
+                raise GoogleVisionError("Google Vision API access denied. Please check your API key and ensure the Vision API is enabled in your Google Cloud Console.")
+            elif resp.status_code == 429:
+                raise GoogleVisionError("Google Vision API quota exceeded. Please check your usage limits.")
+            elif resp.status_code != 200:
+                raise GoogleVisionError(f"Google Vision API returned status {resp.status_code}: {resp.text}")
+                
+            data = resp.json()
+        except requests.exceptions.RequestException as e:
+            raise GoogleVisionError(f"Network/API error: {e}")
+
+        # Parse Vision API response
+        responses = data.get("responses") or []
+        if not responses:
+            raise GoogleVisionError("Empty response from Vision API")
+            
+        response = responses[0]
+        
+        # Check for errors in the response
+        if "error" in response:
+            error_obj = response["error"]
+            raise GoogleVisionError(f"Google API error: {error_obj.get('message', 'Unknown error')}")
+        
+        # Extract text from fullTextAnnotation
+        full_text_annotation = response.get("fullTextAnnotation")
+        if not full_text_annotation:
+            raise GoogleVisionError("No text detected in image")
+            
+        full_text = full_text_annotation.get("text", "").strip()
+        if not full_text:
+            raise GoogleVisionError("No text detected in image")
+            
+        logger.info(f"Google Vision API successfully extracted {len(full_text)} characters")
+        return full_text
+        
+    except ImportError as e:
+        raise GoogleVisionError(f"Google Cloud Vision library not installed: {e}")
+    except Exception as e:
+        if isinstance(e, GoogleVisionError):
+            raise
+        logger.error(f"Unexpected error in Google Vision OCR: {e}")
+        raise GoogleVisionError(f"Failed to process image: {str(e)}")

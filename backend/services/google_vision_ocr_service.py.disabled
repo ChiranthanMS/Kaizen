@@ -1,0 +1,118 @@
+import os
+import io
+import logging
+from typing import Optional, Tuple
+from PIL import Image
+import tempfile
+
+logger = logging.getLogger(__name__)
+
+class GoogleVisionOCRService:
+    def __init__(self):
+        # Google Vision API key from environment
+        self.google_vision_api_key = os.getenv("GOOGLE_VISION_API_KEY")
+        
+        if self.google_vision_api_key:
+            logger.info("Google Vision API key detected")
+        else:
+            logger.warning("Google Vision API key not found in environment variables")
+    
+    def is_available(self) -> bool:
+        """Check if Google Vision API is available"""
+        return bool(self.google_vision_api_key and self.google_vision_api_key.strip())
+    
+    async def extract_text_from_file(self, file_content: bytes, filename: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Extract text from uploaded file using Google Cloud Vision API
+        Returns: (success, extracted_text, error_message)
+        """
+        try:
+            if not self.is_available():
+                return False, None, "Google Vision API key not configured. Please set GOOGLE_VISION_API_KEY in your environment variables."
+            
+            file_extension = filename.lower().split('.')[-1] if filename else ''
+            
+            if file_extension == 'pdf':
+                return await self._extract_from_pdf(file_content, filename)
+            elif file_extension in ['jpg', 'jpeg', 'png', 'bmp', 'tiff', 'gif']:
+                return await self._extract_from_image(file_content, filename)
+            else:
+                return False, None, f"Unsupported file type: {file_extension}"
+                
+        except Exception as e:
+            logger.error(f"Error in Google Vision OCR processing: {str(e)}")
+            return False, None, f"OCR processing failed: {str(e)}"
+    
+    async def _extract_from_image(self, image_content: bytes, filename: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Extract text from image using Google Cloud Vision API"""
+        try:
+            from services.google_vision_service import perform_ocr, GoogleVisionError
+            
+            # Use the existing Google Vision service
+            extracted_text = perform_ocr(image_content)
+            
+            if extracted_text and extracted_text.strip():
+                logger.info(f"Google Vision OCR successful for {filename}. Extracted {len(extracted_text)} characters.")
+                return True, extracted_text.strip(), None
+            else:
+                return False, None, "No text could be extracted from the image"
+                
+        except GoogleVisionError as e:
+            logger.error(f"Google Vision API error for {filename}: {str(e)}")
+            return False, None, f"Google Vision API error: {str(e)}"
+        except Exception as e:
+            logger.error(f"Google Vision processing error for {filename}: {str(e)}")
+            return False, None, f"Google Vision processing error: {str(e)}"
+    
+    async def _extract_from_pdf(self, pdf_content: bytes, filename: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Extract text from PDF using Google Cloud Vision API"""
+        try:
+            # For PDF files, we'll convert to images first and then process
+            from pdf2image import convert_from_bytes
+            from services.google_vision_service import perform_ocr, GoogleVisionError
+            
+            # Convert PDF to images
+            try:
+                images = convert_from_bytes(pdf_content, first_page=1, last_page=5)  # Limit to first 5 pages
+            except Exception as e:
+                return False, None, f"Failed to convert PDF to images: {str(e)}"
+            
+            if not images:
+                return False, None, "No pages found in PDF"
+            
+            all_text = []
+            
+            for i, image in enumerate(images):
+                try:
+                    # Convert PIL image to bytes
+                    img_byte_arr = io.BytesIO()
+                    image.save(img_byte_arr, format='PNG')
+                    img_bytes = img_byte_arr.getvalue()
+                    
+                    # Extract text using Google Vision
+                    page_text = perform_ocr(img_bytes)
+                    if page_text and page_text.strip():
+                        all_text.append(f"--- Page {i+1} ---\n{page_text.strip()}")
+                        
+                except GoogleVisionError as e:
+                    logger.warning(f"Google Vision failed for page {i+1} of {filename}: {str(e)}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error processing page {i+1} of {filename}: {str(e)}")
+                    continue
+            
+            if all_text:
+                combined_text = "\n\n".join(all_text)
+                logger.info(f"Google Vision OCR successful for PDF {filename}. Extracted text from {len(all_text)} pages.")
+                return True, combined_text, None
+            else:
+                return False, None, "No text could be extracted from any page of the PDF"
+                
+        except ImportError:
+            return False, None, "PDF processing requires pdf2image. Please install with: pip install pdf2image"
+        except Exception as e:
+            logger.error(f"PDF processing error for {filename}: {str(e)}")
+            return False, None, f"PDF processing error: {str(e)}"
+
+# Global Google Vision OCR service instance
+google_vision_ocr_service = GoogleVisionOCRService()

@@ -1,0 +1,127 @@
+.pending-bills-manager {
+    padding: 20px;
+    color: white;
+}
+
+.approval-header {
+    margin-bottom: 30px;
+}
+
+.approval-header h2 {
+    font-size: 24px;
+    margin-bottom: 10px;
+    color: #fff;
+}
+
+.approval-stats {
+    margin-top: 15px;
+}
+
+.stat-badge {
+    background: rgba(255, 152, 0, 0.2);
+    color: #FF9800;
+    padding: 6px 15px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.submissions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+}
+
+.submission-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.submission-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.submission-info h3 {
+    margin: 0 0 5px 0;
+    font-size: 18px;
+    color: #fff;
+}
+
+.trip-id {
+    margin: 0;
+    font-size: 14px;
+    color: #aaa;
+}
+
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.status-badge.pending {
+    background: rgba(255, 152, 0, 0.2);
+    color: #FF9800;
+}
+
+.submission-details {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.detail-label {
+    color: #aaa;
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-right: 15px;
+}
+
+.detail-value {
+    color: #fff;
+    font-size: 14px;
+    text-align: right;
+    word-break: break-word;
+}
+
+.expense-amount {
+    font-size: 18px;
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+.submission-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: auto;
+}
+
+.submission-actions button {
+    flex: 1;
+    padding: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+}

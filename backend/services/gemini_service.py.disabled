@@ -1,0 +1,148 @@
+import os
+import json
+import logging
+from typing import Optional, Tuple, Dict, Any
+import requests
+
+logger = logging.getLogger(__name__)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_ENDPOINT = os.getenv(
+    "GEMINI_ENDPOINT",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+)
+
+BILL_PROMPT = (
+    "You are an AI assistant for a corporate travel expense management system.\n"
+    "The input will be the raw OCR text extracted from an employee’s bill. \n"
+    "The bill can be of type: \"food\", \"rent\", or \"travel\". \n"
+    "You must carefully extract only the relevant fields and return them in strict JSON format.\n"
+    "Rules:\n"
+    "1. Identify the bill category from context. \n"
+    "   - \"travel\" includes tickets, taxis, hotels linked to trips.\n"
+    "   - \"food\" includes restaurants, cafes, catering.\n"
+    "   - \"rent\" includes room/apartment rent, conference hall rent.\n"
+    "2. Dates must be in YYYY-MM-DD format.\n"
+    "3. Amount must be a float, with no currency symbol.\n"
+    "4. Vendor name should be exactly as shown on the bill.\n"
+    "5. For travel bills, include both \"travel_from\" and \"travel_to\" if available; otherwise null.\n"
+    "6. Description should be a short human-readable summary from the bill content.\n"
+    "Expected JSON format:\n"
+    "{\n"
+    "  \"category\": \"food\" | \"rent\" | \"travel\",\n"
+    "  \"bill_date\": \"YYYY-MM-DD\",\n"
+    "  \"amount\": 0.00,\n"
+    "  \"vendor\": \"string\",\n"
+    "  \"travel_from\": \"string or null\",\n"
+    "  \"travel_to\": \"string or null\",\n"
+    "  \"description\": \"string\",\n"
+    "  \"payment_method\": \"cash\" | \"card\" | \"upi\" | \"netbanking\" | \"other\",\n"
+    "  \"invoice_number\": \"string or null\",\n"
+    "  \"tax_amount\": 0.00,\n"
+    "  \"total_amount_with_tax\": 0.00,\n"
+    "  \"currency\": \"INR\" | \"USD\" | \"EUR\" | \"other\"\n"
+    "}\n"
+    "If data is missing in the OCR text, return null for that field but keep the JSON key.\n"
+    "Output only the JSON — no extra text."
+)
+
+class GeminiService:
+    """Encapsulates Gemini API interaction for bill analysis."""
+
+    def is_available(self) -> bool:
+        return bool(GEMINI_API_KEY and GEMINI_API_KEY.strip())
+
+    def analyze_bill(self, raw_text: str, filename: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Send raw OCR text to Gemini with a strict instruction and return parsed JSON.
+        Returns: (parsed_dict | None, error | None)
+        """
+        if not self.is_available():
+            return None, "Gemini API key not configured"
+
+        # Build request body
+        content_text = f"Instruction:\n{BILL_PROMPT}\n\nFilename: {filename or 'unknown'}\nOCR Text:\n{raw_text}"
+        body = {
+            "contents": [
+                {"role": "user", "parts": [{"text": content_text}]}
+            ],
+            "generationConfig": {
+                "temperature": 0.0,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 512,
+                "response_mime_type": "application/json",
+            },
+        }
+
+        try:
+            resp = requests.post(
+                GEMINI_ENDPOINT, params={"key": GEMINI_API_KEY}, json=body, timeout=45
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return None, "Gemini returned no candidates"
+            text = (
+                candidates[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+                .strip()
+            )
+            if not text:
+                return None, "Gemini returned empty content"
+
+            # Clean: extract first JSON object and parse
+            raw = text
+            if raw.startswith("```"):
+                raw = raw.strip().strip("`")
+                if raw.lower().startswith("json\n"):
+                    raw = raw[5:]
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                raw_json = raw[start : end + 1]
+            else:
+                raw_json = raw
+
+            try:
+                parsed = json.loads(raw_json)
+            except json.JSONDecodeError as e:
+                return None, f"Gemini JSON parse error: {e}"
+
+            # Normalize fields to expected types
+            def _to_float(v):
+                if v is None:
+                    return None
+                if isinstance(v, (int, float)):
+                    return float(v)
+                if isinstance(v, str):
+                    try:
+                        return float(v.replace(",", "").strip().replace("₹", "").replace("$", ""))
+                    except Exception:
+                        return None
+                return None
+
+            parsed["amount"] = _to_float(parsed.get("amount"))
+            parsed["tax_amount"] = _to_float(parsed.get("tax_amount"))
+            parsed["total_amount_with_tax"] = _to_float(parsed.get("total_amount_with_tax"))
+            if parsed.get("currency"):
+                parsed["currency"] = str(parsed["currency"]).upper()
+            if parsed.get("category"):
+                parsed["category"] = str(parsed["category"]).lower()
+            if parsed.get("payment_method"):
+                parsed["payment_method"] = str(parsed["payment_method"]).lower()
+
+            return parsed, None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Gemini API request failed: {e}")
+            return None, f"Gemini request failed: {e}"
+        except Exception as e:
+            logger.error(f"Gemini parsing error: {e}")
+            return None, f"Gemini parsing error: {e}"
+
+# Global instance
+
+gemini_service = GeminiService()

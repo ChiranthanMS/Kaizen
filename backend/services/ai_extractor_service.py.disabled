@@ -1,0 +1,164 @@
+import os
+import json
+import logging
+from typing import Optional, Tuple, List
+import requests
+
+logger = logging.getLogger(__name__)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
+
+class AIExtractorService:
+    def __init__(self):
+        if GEMINI_API_KEY:
+            masked = GEMINI_API_KEY[:3] + "***" + GEMINI_API_KEY[-3:]
+            logger.info(f"Gemini API key detected: {masked} (masked)")
+        else:
+            logger.info("Gemini API key not set. AI-assisted parsing disabled.")
+
+    def is_available(self) -> bool:
+        return bool(GEMINI_API_KEY and GEMINI_API_KEY.strip())
+
+    def parse_with_gemini(self, raw_text: str, filename: Optional[str] = None) -> Tuple[Optional[dict], Optional[float], List[str]]:
+        """
+        Use Gemini to extract structured financial data from OCR raw text.
+        Returns: (financial_data_dict, confidence_score, warnings)
+        """
+        if not self.is_available():
+            return None, None, ["Gemini API not configured"]
+
+        system_instructions = (
+            "You are an expert receipt parser. Carefully analyze the OCR text and return STRICT JSON only (no markdown). "
+            "Schema: {\n"
+            "  \"date\": string|null (YYYY-MM-DD),\n"
+            "  \"vendor\": string|null,\n"
+            "  \"category\": string|null (food|transport|lodging|fuel|entertainment|office_supplies|communication|medical|miscellaneous),\n"
+            "  \"amount\": number|null,\n"
+            "  \"subtotal\": number|null,\n"
+            "  \"tax\": number|null,\n"
+            "  \"discount\": number|null,\n"
+            "  \"currency\": string|null (ISO like USD, INR, EUR),\n"
+            "  \"remarks\": string|null,\n"
+            "  \"line_items\": [ { \"name\": string, \"qty\": number|null, \"unit_price\": number|null, \"line_total\": number|null } ]\n"
+            "}.\n"
+            "Rules: Do not fabricate values. If total is missing but a clear Subtotal exists, set amount=subtotal. "
+            "Infer currency from symbols (₹ => INR, $ => USD, € => EUR, £ => GBP). Prefer local currency if address/locale suggests India.\n"
+            "Normalize date to YYYY-MM-DD. Normalize vendor casing (title case). Classify category from context (restaurants => food)."
+        )
+
+        user_text = f"Filename: {filename or 'unknown'}\nOCR Text:\n{raw_text}"
+        body = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": system_instructions + "\n\n" + user_text}]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.0,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 512,
+                "response_mime_type": "application/json"
+            }
+        }
+
+        try:
+            resp = requests.post(
+                GEMINI_ENDPOINT,
+                params={"key": GEMINI_API_KEY},
+                json=body,
+                timeout=30
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return None, None, ["Gemini returned no candidates"]
+            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+            if not text:
+                return None, None, ["Gemini returned empty content"]
+
+            # Robust JSON extraction/cleaning
+            raw = text
+            # Strip common code fences
+            if raw.startswith("```"):
+                raw = raw.strip().strip('`')
+                # Remove a possible leading language tag like ```json
+                if raw.lower().startswith("json\n"):
+                    raw = raw[5:]
+            # Extract the first JSON object in the text
+            start = raw.find('{')
+            end = raw.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                raw_json = raw[start:end+1]
+            else:
+                raw_json = raw
+
+            try:
+                parsed = json.loads(raw_json)
+            except json.JSONDecodeError as e:
+                return None, None, [f"Gemini JSON parse error: {e}"]
+
+            # Normalize fields and compute a simple confidence
+            def _to_float(v):
+                if v is None:
+                    return None
+                if isinstance(v, (int, float)):
+                    return float(v)
+                if isinstance(v, str):
+                    try:
+                        return float(v.replace(',', '').strip())
+                    except Exception:
+                        return None
+                return None
+
+            # Coerce/normalize numeric fields and basic strings
+            for key in ["amount", "subtotal", "tax", "discount"]:
+                if key in parsed:
+                    parsed[key] = _to_float(parsed.get(key))
+            if parsed.get("currency"):
+                parsed["currency"] = str(parsed["currency"]).upper()
+            if parsed.get("vendor"):
+                parsed["vendor"] = str(parsed["vendor"]).strip().title()
+            if parsed.get("category"):
+                parsed["category"] = str(parsed["category"]).strip().lower()
+            # Normalize line items if present
+            items = parsed.get("line_items") or []
+            norm_items = []
+            if isinstance(items, list):
+                for it in items:
+                    try:
+                        name = it.get("name") if isinstance(it, dict) else None
+                        qty = _to_float(it.get("qty")) if isinstance(it, dict) else None
+                        unit_price = _to_float(it.get("unit_price")) if isinstance(it, dict) else None
+                        line_total = _to_float(it.get("line_total")) if isinstance(it, dict) else None
+                        if line_total is None and qty is not None and unit_price is not None:
+                            line_total = round(qty * unit_price, 2)
+                        norm_items.append({
+                            "name": name,
+                            "qty": qty,
+                            "unit_price": unit_price,
+                            "line_total": line_total
+                        })
+                    except Exception:
+                        continue
+                parsed["line_items"] = norm_items
+
+            fields = ["amount", "date", "vendor", "category"]
+            conf = 0.0
+            for f in fields:
+                if parsed.get(f) not in (None, ""):
+                    conf += 0.25
+            warnings: List[str] = ["Parsed by Gemini AI"]
+            return parsed, conf, warnings
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Gemini API request failed: {e}")
+            return None, None, [f"Gemini request failed: {e}"]
+        except Exception as e:
+            logger.error(f"Gemini parsing error: {e}")
+            return None, None, [f"Gemini parsing error: {e}"]
+
+# Global instance
+ai_extractor_service = AIExtractorService()

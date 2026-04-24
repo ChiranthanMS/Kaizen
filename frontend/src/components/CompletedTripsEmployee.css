@@ -1,0 +1,475 @@
+.completed-trips-employee {
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.header h2 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-size: 2rem;
+}
+
+.header p {
+    color: #7f8c8d;
+    font-size: 1.1rem;
+}
+
+.loading-container, .error-container {
+    text-align: center;
+    padding: 40px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.error-container h3 {
+    color: #e74c3c;
+    margin-bottom: 15px;
+}
+
+.retry-button {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    margin-top: 15px;
+}
+
+.retry-button:hover {
+    background: #2980b9;
+}
+
+.no-trips {
+    text-align: center;
+    padding: 60px 20px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.no-trips-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.no-trips h3 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+    font-size: 1.5rem;
+}
+
+.no-trips p {
+    color: #7f8c8d;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+}
+
+.trips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 25px;
+}
+
+.trip-card {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    border-left: 5px solid #3498db;
+}
+
+.trip-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+
+.trip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.trip-header h3 {
+    color: #2c3e50;
+    margin: 0;
+    font-size: 1.3rem;
+    flex: 1;
+    margin-right: 15px;
+}
+
+.status-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-not-submitted {
+    background: #f39c12;
+    color: white;
+}
+
+.status-submitted {
+    background: #3498db;
+    color: white;
+}
+
+.status-approved {
+    background: #27ae60;
+    color: white;
+}
+
+.status-rejected {
+    background: #e74c3c;
+    color: white;
+}
+
+.status-unknown {
+    background: #95a5a6;
+    color: white;
+}
+
+.trip-info {
+    margin-bottom: 20px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 8px 0;
+}
+
+.info-row .label {
+    font-weight: 600;
+    color: #34495e;
+    flex: 0 0 140px;
+}
+
+.info-row .value {
+    color: #2c3e50;
+    text-align: right;
+    flex: 1;
+}
+
+.trip-actions {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #ecf0f1;
+}
+
+.details-button {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: background 0.2s;
+    width: 100%;
+}
+
+.details-button:hover {
+    background: #2980b9;
+}
+
+.approval-comments, .rejection-reason {
+    margin-top: 15px;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.approval-comments {
+    background: #d5f4e6;
+    border-left: 4px solid #27ae60;
+}
+
+.rejection-reason {
+    background: #fdeaea;
+    border-left: 4px solid #e74c3c;
+}
+
+.approval-comments strong, .rejection-reason strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #2c3e50;
+}
+
+.approval-comments p, .rejection-reason p {
+    margin: 0;
+    color: #34495e;
+    line-height: 1.4;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 15px;
+    max-width: 700px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 25px;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 1.5rem;
+}
+
+.close-button {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #7f8c8d;
+    padding: 5px;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-button:hover {
+    background: #ecf0f1;
+    color: #2c3e50;
+}
+
+.modal-body {
+    padding: 25px;
+}
+
+.detail-section {
+    margin-bottom: 30px;
+}
+
+.detail-section h4 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 8px;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.detail-item label {
+    font-weight: 600;
+    color: #34495e;
+    font-size: 0.9rem;
+}
+
+.detail-item span {
+    color: #2c3e50;
+    font-size: 1rem;
+}
+
+.financial-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.financial-item {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.financial-item label {
+    display: block;
+    font-weight: 600;
+    color: #34495e;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+.financial-item .amount {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #27ae60;
+}
+
+.financial-item .percentage {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #3498db;
+}
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.timeline-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.timeline-label {
+    font-weight: 600;
+    color: #34495e;
+}
+
+.comments-box, .rejection-box {
+    padding: 15px;
+    border-radius: 8px;
+    line-height: 1.5;
+    font-size: 1rem;
+}
+
+.comments-box {
+    background: #d5f4e6;
+    color: #27ae60;
+    border: 1px solid #a3d9b1;
+}
+
+.rejection-box {
+    background: #fdeaea;
+    color: #e74c3c;
+    border: 1px solid #f5b7b1;
+}
+
+.modal-footer {
+    padding: 20px 25px;
+    border-top: 1px solid #ecf0f1;
+    text-align: right;
+}
+
+.close-modal-button {
+    background: #95a5a6;
+    color: white;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.close-modal-button:hover {
+    background: #7f8c8d;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .completed-trips-employee {
+        padding: 15px;
+    }
+    
+    .trips-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .trip-card {
+        padding: 20px;
+    }
+    
+    .trip-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .info-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .info-row .label {
+        flex: none;
+    }
+    
+    .info-row .value {
+        text-align: left;
+    }
+    
+    .modal-content {
+        margin: 10px;
+        max-height: 95vh;
+    }
+    
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .financial-summary {
+        grid-template-columns: 1fr;
+    }
+}

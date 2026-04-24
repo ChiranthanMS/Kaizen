@@ -45,6 +45,7 @@ class BillResponse(BaseModel):
     department: Optional[str] = None
     filename: Optional[str] = None
     file_type: Optional[str] = None
+    file_hash: Optional[str] = None
     # Store as Python date; validator will coerce from str/datetime
     date: Optional[date] = None
     vendor: Optional[str] = None
@@ -55,10 +56,14 @@ class BillResponse(BaseModel):
     discount: Optional[float] = None
     currency: str = "USD"
     remarks: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    justification: Optional[str] = None
     confidence_score: Optional[float] = None
     processing_time: Optional[float] = None
     status: str = "pending"
-    created_at: datetime
+    trip_id: Optional[str] = None
+    trip_status: Optional[str] = None
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     @field_validator("date", mode="before")
@@ -71,17 +76,30 @@ class BillResponse(BaseModel):
         if isinstance(v, datetime):
             return v.date()
         if isinstance(v, str):
-            # Try ISO format first
             try:
                 return datetime.strptime(v, "%Y-%m-%d").date()
             except Exception:
-                # Fallback: try common dd/mm/yyyy or mm/dd/yyyy
                 for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y"):
                     try:
                         return datetime.strptime(v, fmt).date()
                     except Exception:
                         continue
-        # If parsing failed, return None rather than raising
+        return None
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def _coerce_datetime(cls, v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            # SQLite stores as "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD HH:MM:SS.ffffff"
+            for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+                try:
+                    return datetime.strptime(v, fmt)
+                except Exception:
+                    continue
         return None
 
     class Config:

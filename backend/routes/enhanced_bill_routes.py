@@ -183,8 +183,8 @@ async def process_enhanced_bill(
             elif confidence >= 0.6:
                 initial_status = 'pending'  # Send to manager
             else:
-                initial_status = 'rejected'
-                rejection_reason = f"Flagged: AI confidence score too low ({confidence*100:.1f}%)."
+                initial_status = 'under_review'
+                rejection_reason = f"Flagged: AI confidence score too low ({confidence*100:.1f}%). Manager review required."
 
         # Prepare database record
         db_bill_data = {
@@ -372,6 +372,17 @@ async def get_my_bills_enhanced(
             detail=f"Failed to fetch bills: {str(e)}"
         )
 
+def _safe_date_str(value):
+    """Safely convert a date value to ISO string. Handles both Python date objects and strings from SQLite."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value  # SQLite already returns strings
+    try:
+        return value.isoformat()
+    except Exception:
+        return str(value)
+
 @router.get("/my-bills")
 async def get_my_bills(
     limit: int = Query(default=50, le=100),
@@ -391,25 +402,33 @@ async def get_my_bills(
         for bill in bills:
             formatted_bills.append({
                 "id": bill['id'],
-                "filename": bill['filename'],
-                "date": bill['date'].isoformat() if bill['date'] else None,
-                "vendor": bill['vendor'],
-                "category": bill['category'],
-                "amount": float(bill['amount']) if bill['amount'] else 0,
-                "subtotal": float(bill['subtotal']) if bill['subtotal'] else None,
-                "tax": float(bill['tax']) if bill['tax'] else None,
-                "currency": bill['currency'],
-                "status": bill['status'],
-                "confidence_score": float(bill['confidence_score']) if bill['confidence_score'] else None,
-                "remarks": bill['remarks'],
-                "created_at": bill['created_at'].isoformat() if bill['created_at'] else None,
-                "updated_at": bill['updated_at'].isoformat() if bill['updated_at'] else None
+                "filename": bill.get('filename'),
+                "date": _safe_date_str(bill.get('date')),
+                "vendor": bill.get('vendor'),
+                "category": bill.get('category'),
+                "amount": float(bill['amount']) if bill.get('amount') else 0,
+                "subtotal": float(bill['subtotal']) if bill.get('subtotal') else None,
+                "tax": float(bill['tax']) if bill.get('tax') else None,
+                "currency": bill.get('currency'),
+                "status": bill.get('status', 'pending'),
+                "trip_status": bill.get('trip_status', 'individual'),
+                "trip_id": bill.get('trip_id'),
+                "confidence_score": float(bill['confidence_score']) if bill.get('confidence_score') else None,
+                "remarks": bill.get('remarks'),
+                "rejection_reason": bill.get('rejection_reason'),
+                "justification": bill.get('justification'),
+                "created_at": _safe_date_str(bill.get('created_at')),
+                "updated_at": _safe_date_str(bill.get('updated_at'))
             })
+        
+        # Get statistics for dashboard
+        stats = await db_manager.get_bill_statistics(pg_user_id)
         
         return {
             "success": True,
             "bills": formatted_bills,
             "total_count": len(formatted_bills),
+            "statistics": stats,
             "user_info": {
                 "employee_id": pg_user_id,
                 "email": current_user.email,

@@ -10,6 +10,23 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+async def resolve_postgres_id(current_user) -> int:
+    """Resolve the SQLite/PostgreSQL integer user ID from the JWT token data.
+    JWT stores MongoDB ObjectId strings which can't be cast to int directly."""
+    try:
+        pg_user = await db_manager.get_user_by_email(current_user.email)
+        if pg_user:
+            return pg_user['id']
+        # Fallback: sync from MongoDB
+        from services.mongodb_service import mongodb_service
+        mongo_user = mongodb_service.find_user_by_email(current_user.email)
+        if mongo_user:
+            return await db_manager.sync_user_from_mongodb(mongo_user)
+        raise ValueError(f"User {current_user.email} not found in any database")
+    except Exception as e:
+        logger.error(f"Failed to resolve postgres ID for {current_user.email}: {e}")
+        raise
+
 router = APIRouter(prefix="/manager", tags=["Manager Operations"])
 
 # Response models for employee data from MongoDB
@@ -127,7 +144,7 @@ async def get_employee_bills(
         # Verify that the employee is under this manager
         employee_check = await db_manager.execute_query(
             "SELECT id FROM app_users WHERE id = $1 AND manager_id = $2",
-            employee_id, int(current_user.user_id)
+            employee_id, await resolve_postgres_id(current_user)
         )
         
         if not employee_check:
@@ -193,29 +210,31 @@ async def get_pending_bills(
     current_user: TokenData = Depends(get_current_manager)
 ):
     """
-    Get all pending bills from employees under the manager.
-    Only managers can access this endpoint.
+    Get all pending bills for manager review.
+    Shows all pending/under_review bills to any authenticated manager.
     """
     try:
         offset = (page - 1) * page_size
         
+        # Show ALL pending and under_review bills to the manager
+        # (manager_id may be NULL in SQLite since sync doesn't carry it)
         bills_query = """
         SELECT b.*, u.username, u.full_name as employee_name, u.email as employee_email, u.department
         FROM app_bills b
         JOIN app_users u ON b.employee_id = u.id
-        WHERE u.manager_id = $1 AND b.status = 'pending'
+        WHERE b.status IN ('pending', 'under_review')
         ORDER BY b.created_at ASC
-        LIMIT $2 OFFSET $3
+        LIMIT $1 OFFSET $2
         """
         
         count_query = """
         SELECT COUNT(*) as count FROM app_bills b
         JOIN app_users u ON b.employee_id = u.id
-        WHERE u.manager_id = $1 AND b.status = 'pending'
+        WHERE b.status IN ('pending', 'under_review')
         """
         
-        bills = await db_manager.execute_query(bills_query, int(current_user.user_id), page_size, offset)
-        total_count_result = await db_manager.execute_query(count_query, int(current_user.user_id))
+        bills = await db_manager.execute_query(bills_query, page_size, offset)
+        total_count_result = await db_manager.execute_query(count_query)
         
         total_count = total_count_result[0]['count'] if total_count_result else 0
         total_pages = (total_count + page_size - 1) // page_size
@@ -245,34 +264,34 @@ async def approve_bill(
 ):
     """
     Approve a bill.
-    Only managers can approve bills from their team.
+    Only managers can approve bills.
     """
     try:
-        # Check if bill exists and belongs to manager's team
+        # Check if bill exists (don't check manager_id since it may be NULL in SQLite)
         bill_check = await db_manager.execute_query(
             """SELECT b.id, u.full_name as employee_name FROM app_bills b
                JOIN app_users u ON b.employee_id = u.id
-               WHERE b.id = $1 AND u.manager_id = $2""",
-            bill_id, int(current_user.user_id)
+               WHERE b.id = $1""",
+            bill_id
         )
         
         if not bill_check:
             raise HTTPException(
                 status_code=404,
-                detail="Bill not found or access denied"
+                detail="Bill not found"
             )
         
-        # Update bill status to approved
+        # Update bill status to approved and clear rejection reason
         success = await db_manager.update_bill_status(bill_id, 'approved')
         
-        if remarks:
-            await db_manager.execute_command(
-                "UPDATE app_bills SET remarks = $1 WHERE id = $2",
-                remarks, bill_id
-            )
+        # Clear rejection reason and update remarks
+        await db_manager.execute_command(
+            "UPDATE app_bills SET rejection_reason = NULL, remarks = $1 WHERE id = $2",
+            remarks if remarks else "Approved by manager", bill_id
+        )
         
         if success:
-            employee_name = bill_check[0]['employee_name']
+            employee_name = bill_check[0].get('employee_name', 'Unknown')
             return {
                 "message": f"Bill approved successfully for {employee_name}",
                 "bill_id": bill_id,
@@ -302,21 +321,21 @@ async def reject_bill(
 ):
     """
     Reject a bill.
-    Only managers can reject bills from their team.
+    Only managers can reject bills.
     """
     try:
-        # Check if bill exists and belongs to manager's team
+        # Check if bill exists (don't check manager_id since it may be NULL in SQLite)
         bill_check = await db_manager.execute_query(
             """SELECT b.id, u.full_name as employee_name FROM app_bills b
                JOIN app_users u ON b.employee_id = u.id
-               WHERE b.id = $1 AND u.manager_id = $2""",
-            bill_id, int(current_user.user_id)
+               WHERE b.id = $1""",
+            bill_id
         )
         
         if not bill_check:
             raise HTTPException(
                 status_code=404,
-                detail="Bill not found or access denied"
+                detail="Bill not found"
             )
         
         # Update bill status to rejected
@@ -324,12 +343,12 @@ async def reject_bill(
         
         if remarks:
             await db_manager.execute_command(
-                "UPDATE app_bills SET remarks = $1 WHERE id = $2",
-                remarks, bill_id
+                "UPDATE app_bills SET remarks = $1, rejection_reason = $2 WHERE id = $3",
+                remarks, remarks, bill_id
             )
         
         if success:
-            employee_name = bill_check[0]['employee_name']
+            employee_name = bill_check[0].get('employee_name', 'Unknown')
             return {
                 "message": f"Bill rejected for {employee_name}",
                 "bill_id": bill_id,

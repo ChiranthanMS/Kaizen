@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EnhancedBillUpload from './EnhancedBillUpload';
 import TripBudgetDashboard from './TripBudgetDashboard';
@@ -24,6 +24,10 @@ const ProfessionalEmployeeDashboard = () => {
         completedTrips: 0
     });
 
+    // Auto-refresh polling interval (30s) for manager approval sync
+    const refreshInterval = useRef(null);
+    const [lastRefresh, setLastRefresh] = useState(null);
+
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -33,6 +37,24 @@ const ProfessionalEmployeeDashboard = () => {
         
         fetchProfile();
         fetchDashboardData();
+
+        // Auto-refresh every 30 seconds to pick up manager approvals
+        refreshInterval.current = setInterval(() => {
+            fetchDashboardData(true); // silent refresh
+        }, 30000);
+
+        // Also refresh when user returns to tab
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                fetchDashboardData(true);
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        return () => {
+            clearInterval(refreshInterval.current);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
     }, [navigate]);
 
     const fetchProfile = async () => {
@@ -64,26 +86,36 @@ const ProfessionalEmployeeDashboard = () => {
         }
     };
 
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = async (silent = false) => {
         try {
-            setLoading(true);
+            if (!silent) setLoading(true);
             const token = localStorage.getItem('token');
             
             // Fetch employee bills and trips data
             const [billsRes, completedTripsRes] = await Promise.all([
                 fetch('http://localhost:8000/bills/my-bills', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 }).catch(() => ({ ok: false })),
-                fetch('http://localhost:8000/trip-budget/completed-trips', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                fetch('http://localhost:8000/trip-budget/employee/completed-trips', {
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 }).catch(() => ({ ok: false }))
             ]);
 
             // Process bills data
             let billsData = [];
+            let serverStats = null;
             if (billsRes.ok) {
                 const billsResponse = await billsRes.json();
-                billsData = billsResponse.bills || billsResponse || [];
+                billsData = billsResponse.bills || [];
+                serverStats = billsResponse.statistics || null;
                 setMyBills(billsData);
             }
 
@@ -94,24 +126,25 @@ const ProfessionalEmployeeDashboard = () => {
                 completedTripsData = tripsResponse.completed_trips || [];
             }
 
-            // Calculate dashboard statistics
+            // Use server statistics if available, otherwise calculate from bills
             const stats = {
-                totalBills: billsData.length,
-                pendingBills: billsData.filter(bill => bill.status === 'pending').length,
-                approvedBills: billsData.filter(bill => bill.status === 'approved').length,
-                rejectedBills: billsData.filter(bill => bill.status === 'rejected').length,
-                totalAmount: billsData.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0),
-                activeTrips: 0, // This would come from active trips API
+                totalBills: serverStats ? (serverStats.total_bills || 0) : billsData.length,
+                pendingBills: serverStats ? (serverStats.pending_bills || 0) : billsData.filter(bill => bill.status === 'pending').length,
+                approvedBills: serverStats ? (serverStats.approved_bills || 0) : billsData.filter(bill => bill.status === 'approved').length,
+                rejectedBills: serverStats ? (serverStats.rejected_bills || 0) : billsData.filter(bill => bill.status === 'rejected').length,
+                totalAmount: serverStats ? (parseFloat(serverStats.total_amount) || 0) : billsData.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0),
+                activeTrips: 0,
                 completedTrips: completedTripsData.length
             };
 
             setDashboardStats(stats);
+            setLastRefresh(new Date());
             setError('');
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
-            setError('Failed to load dashboard data');
+            if (!silent) setError('Failed to load dashboard data');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -400,7 +433,11 @@ const ProfessionalEmployeeDashboard = () => {
                             <h2>📤 Upload New Bill</h2>
                             <p>Upload your expense receipts for processing and approval</p>
                         </div>
-                        <EnhancedBillUpload onUploadSuccess={fetchDashboardData} />
+                        <EnhancedBillUpload onUploadSuccess={(data) => {
+                            fetchDashboardData();
+                            // Switch to my-bills tab after 2 seconds so user sees the new bill
+                            setTimeout(() => setActiveTab('my-bills'), 2000);
+                        }} />
                     </div>
                 )}
 

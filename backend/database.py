@@ -180,6 +180,11 @@ class DatabaseManager:
                 await self.connection.execute("ALTER TABLE app_bills ADD COLUMN justification TEXT;")
             except Exception:
                 pass # Column already exists
+
+            try:
+                await self.connection.execute("ALTER TABLE app_bills ADD COLUMN rejection_reason TEXT;")
+            except Exception:
+                pass # Column already exists
                 
             for idx in create_indexes:
                 await self.connection.execute(idx)
@@ -254,8 +259,8 @@ class DatabaseManager:
         INSERT INTO app_bills (
             employee_id, trip_id, filename, file_type, file_hash, date, vendor, category,
             amount, subtotal, tax, discount, currency, remarks,
-            raw_text, confidence_score, processing_time, status, trip_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            raw_text, confidence_score, processing_time, status, trip_status, rejection_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
             cursor = await self.connection.execute(
@@ -266,7 +271,8 @@ class DatabaseManager:
                     bill_data.get('category'), bill_data.get('amount'), bill_data.get('subtotal'),
                     bill_data.get('tax'), bill_data.get('discount'), bill_data.get('currency', 'USD'),
                     bill_data.get('remarks'), bill_data.get('raw_text'), bill_data.get('confidence_score'),
-                    bill_data.get('processing_time'), bill_data.get('status', 'pending'), bill_data.get('trip_status', 'individual')
+                    bill_data.get('processing_time'), bill_data.get('status', 'pending'), bill_data.get('trip_status', 'individual'),
+                    bill_data.get('rejection_reason')
                 )
             )
             await self.connection.commit()

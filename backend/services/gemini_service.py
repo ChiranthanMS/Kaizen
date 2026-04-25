@@ -19,7 +19,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Updated to use Gemini 2.0 Flash model
 GEMINI_ENDPOINT = os.getenv(
     "GEMINI_ENDPOINT",
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
 )
 
 BILL_PROMPT = (

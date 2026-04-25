@@ -14,10 +14,10 @@ def main():
     backend_dir = Path(__file__).resolve().parent
     os.chdir(backend_dir)
     
-    print("🚀 Starting Travel Expense API Server")
+    print("Starting Travel Expense API Server")
     print("=" * 50)
-    print(f"📁 Working directory: {backend_dir}")
-    print(f"🐍 Python version: {sys.version}")
+    print(f"Working directory: {backend_dir}")
+    print(f"Python version: {sys.version}")
     print("=" * 50)
     
     # Configuration
@@ -25,8 +25,8 @@ def main():
     port = int(os.getenv("PORT", "8000"))
     reload = os.getenv("RELOAD", "true").lower() == "true"
     
-    print(f"🌐 Server will start on: http://{host}:{port}")
-    print(f"🔄 Auto-reload: {'enabled' if reload else 'disabled'}")
+    print(f"Server will start on: http://{host}:{port}")
+    print(f"Auto-reload: {'enabled' if reload else 'disabled'}")
     print("=" * 50)
     
     try:
@@ -40,9 +40,9 @@ def main():
             access_log=True
         )
     except KeyboardInterrupt:
-        print("\n👋 Server stopped by user")
+        print("\nServer stopped by user")
     except Exception as e:
-        print(f"❌ Server failed to start: {e}")
+        print(f"Server failed to start: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

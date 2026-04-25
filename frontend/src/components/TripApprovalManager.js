@@ -19,11 +19,13 @@ const TripApprovalManager = () => {
     const fetchPendingSubmissions = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/trip-budget/pending-trip-submissions', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -47,7 +49,7 @@ const TripApprovalManager = () => {
 
         try {
             setProcessingId(selectedSubmission.submission_id);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             const response = await fetch('http://localhost:8000/trip-budget/approve-trip-submission', {
                 method: 'POST',
@@ -83,7 +85,7 @@ const TripApprovalManager = () => {
 
         try {
             setProcessingId(selectedSubmission.submission_id);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             const response = await fetch('http://localhost:8000/trip-budget/reject-trip-submission', {
                 method: 'POST',
@@ -115,15 +117,15 @@ const TripApprovalManager = () => {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: 'USD'
+            currency: 'INR'
         }).format(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('en-IN', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'

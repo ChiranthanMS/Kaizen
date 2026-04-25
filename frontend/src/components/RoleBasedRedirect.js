@@ -8,7 +8,7 @@ const RoleBasedRedirect = () => {
     useEffect(() => {
         const checkUserRole = async () => {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 if (!token) {
                     navigate('/login');
                     return;
@@ -17,7 +17,9 @@ const RoleBasedRedirect = () => {
                 const response = await fetch('http://localhost:8000/profile', {
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
                     }
                 });
 
@@ -32,12 +34,12 @@ const RoleBasedRedirect = () => {
                     }
                 } else {
                     // Invalid token
-                    localStorage.removeItem('token');
+                    sessionStorage.removeItem('token');
                     navigate('/login');
                 }
             } catch (error) {
                 console.error('Error checking user role:', error);
-                localStorage.removeItem('token');
+                sessionStorage.removeItem('token');
                 navigate('/login');
             } finally {
                 setLoading(false);

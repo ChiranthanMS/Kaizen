@@ -15,32 +15,36 @@ def run_backend():
     backend_dir = Path(__file__).parent / "backend"
     os.chdir(backend_dir)
     
-    print("🚀 Starting FastAPI backend server...")
+    # Check for virtual environment
+    venv_python = Path("venv") / ("Scripts" if os.name == "nt" else "bin") / "python"
+    python_exe = str(venv_python) if venv_python.exists() else sys.executable
+
+    print(f"Starting FastAPI backend server using {python_exe}...")
     try:
         subprocess.run([
-            sys.executable, "-m", "uvicorn", 
+            python_exe, "-m", "uvicorn", 
             "main:app", 
             "--reload", 
             "--host", "0.0.0.0", 
             "--port", "8000"
         ], check=True)
     except KeyboardInterrupt:
-        print("\n🛑 Backend server stopped")
+        print("\nBackend server stopped")
     except Exception as e:
-        print(f"❌ Backend server error: {e}")
+        print(f"Backend server error: {e}")
 
 def run_frontend():
     """Start the React frontend server"""
     frontend_dir = Path(__file__).parent / "frontend"
     os.chdir(frontend_dir)
     
-    print("🚀 Starting React frontend server...")
+    print("Starting React frontend server...")
     try:
         subprocess.run(["npm", "start"], check=True, shell=True)
     except KeyboardInterrupt:
-        print("\n🛑 Frontend server stopped")
+        print("\nFrontend server stopped")
     except Exception as e:
-        print(f"❌ Frontend server error: {e}")
+        print(f"Frontend server error: {e}")
 
 def main():
     print("=== Starting Development Servers ===\n")
@@ -56,7 +60,7 @@ def main():
     try:
         run_frontend()
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down servers...")
+        print("\nShutting down servers...")
 
 if __name__ == "__main__":
     main()

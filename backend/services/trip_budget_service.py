@@ -16,6 +16,7 @@ from models.budget_models import (
     TripRequest, TripApproval, ActiveTripSession, TripBudgetValidationResult,
     BudgetCap, CityMapping
 )
+from utils import clean_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class TripBudgetService:
         # In-memory storage for demo (in production, use database)
         self.official_trips: Dict[str, OfficialTrip] = {}
         self.active_trip_sessions: Dict[str, ActiveTripSession] = {}
+        self.is_loaded = False
         
         # Budget matrix - daily rates for different designations and city tiers
         self.daily_budget_matrix = self._initialize_budget_matrix()
@@ -354,7 +356,7 @@ class TripBudgetService:
         
         return trip_budget
     
-    def create_trip_request(
+    async def create_trip_request(
         self,
         employee_id: str,
         employee_name: str,
@@ -397,8 +399,44 @@ class TripBudgetService:
             status=TripStatus.PENDING
         )
         
-        # Store trip
+        # Store trip in memory
         self.official_trips[trip_id] = trip
+        
+        # Store pending trip in PostgreSQL database
+        try:
+            from database import db_manager
+            
+            # Get employee PostgreSQL ID
+            from services.mongodb_service import mongodb_service
+            employee_mongo_user = mongodb_service.find_user_by_id(employee_id)
+            employee_pg_id = None
+            if employee_mongo_user:
+                pg_user = await db_manager.get_user_by_email(employee_mongo_user.get('email'))
+                employee_pg_id = pg_user['id'] if pg_user else None
+            
+            if employee_pg_id:
+                pending_trip_data = {
+                    'trip_id': trip_id,
+                    'employee_id': employee_pg_id,
+                    'employee_name': employee_name,
+                    'trip_purpose': trip_purpose,
+                    'destination_city': destination_city,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'duration_days': duration_days,
+                    'designation': designation.value,
+                    'city_tier': destination_tier.value,
+                    'allocated_budget': float(total_allocated),
+                    'total_bills': 0,
+                    'total_amount': 0,
+                    'budget_utilization': 0,
+                    'trip_status': 'pending',
+                    'submission_status': 'not_submitted'
+                }
+                await db_manager.create_completed_trip(pending_trip_data)
+                logger.info(f"Persisted pending trip {trip_id} to database")
+        except Exception as e:
+            logger.warning(f"Failed to persist pending trip {trip_id} to database: {e}")
         
         logger.info(f"Created trip request {trip_id} for employee {employee_id}")
         return trip
@@ -455,7 +493,7 @@ class TripBudgetService:
                         'trip_id': trip.trip_id,
                         'employee_id': employee_pg_user['id'],
                         'employee_name': trip.employee_name,
-                        'trip_purpose': trip.purpose,
+                        'trip_purpose': trip.trip_purpose,
                         'destination_city': trip.destination_city,
                         'start_date': trip.start_date,
                         'end_date': trip.end_date,
@@ -675,8 +713,8 @@ class TripBudgetService:
             # Get bills associated with this trip to calculate totals
             bills = await db_manager.get_bills_by_trip(trip_id)
             total_bills = len(bills)
-            total_amount = sum(float(bill.get('amount', 0)) for bill in bills)
-            budget_utilization = (total_amount / float(trip.total_allocated)) * 100 if trip.total_allocated > 0 else 0
+            total_amount = sum(float(clean_decimal(bill.get('amount', 0))) for bill in bills)
+            budget_utilization = (total_amount / float(clean_decimal(trip.total_allocated))) * 100 if trip.total_allocated > 0 else 0
             
             # Get employee info for the completed trip record
             from services.mongodb_service import mongodb_service
@@ -692,13 +730,13 @@ class TripBudgetService:
                     'trip_id': trip_id,
                     'employee_id': employee_pg_id,
                     'employee_name': employee_name,
-                    'trip_purpose': trip.purpose,
+                    'trip_purpose': trip.trip_purpose,
                     'destination_city': trip.destination_city,
                     'start_date': trip.start_date,
                     'end_date': trip.end_date,
                     'duration_days': trip.duration_days,
                     'designation': trip.designation.value,
-                    'city_tier': trip.city_tier.value,
+                    'city_tier': trip.destination_tier.value,
                     'allocated_budget': float(trip.total_allocated),
                     'total_bills': total_bills,
                     'total_amount': total_amount,
@@ -749,7 +787,7 @@ class TripBudgetService:
         
         # Calculate totals
         total_bills = len(trip_bills)
-        total_amount = sum(Decimal(str(bill['amount'])) for bill in trip_bills)
+        total_amount = sum(clean_decimal(bill['amount']) for bill in trip_bills)
         budget_utilization = (total_amount / trip.total_allocated * 100) if trip.total_allocated > 0 else 0
         
         # Create trip submission
@@ -772,9 +810,9 @@ class TripBudgetService:
             'end_date': trip.end_date,
             'duration_days': trip.duration_days,
             'total_bills': total_bills,
-            'total_amount': total_amount,
-            'allocated_budget': trip.total_allocated,
-            'budget_utilization': budget_utilization,
+            'total_amount': float(total_amount),
+            'allocated_budget': float(trip.total_allocated),
+            'budget_utilization': float(budget_utilization),
             'manager_id': manager_id
         }
         
@@ -819,6 +857,139 @@ class TripBudgetService:
             logger.info(f"Cleaned up expired trip session for employee {employee_id}")
         
         logger.info(f"Cleaned up {len(expired_sessions)} expired trip sessions")
+
+    async def update_trip_justification(self, trip_id: str, justification: str) -> bool:
+        """Update justification for a rejected trip"""
+        from database import db_manager
+        
+        # Update in memory if it exists
+        if trip_id in self.official_trips:
+            self.official_trips[trip_id].justification = justification
+            # If it was rejected, move it back to pending for manager to see it again
+            if self.official_trips[trip_id].status == TripStatus.REJECTED:
+                self.official_trips[trip_id].status = TripStatus.PENDING
+            self.official_trips[trip_id].updated_at = datetime.utcnow()
+        
+        # Update in persistent database
+        return await db_manager.update_trip_justification(trip_id, justification)
+
+    async def load_from_db(self):
+        """Load all trips from the persistent database into memory"""
+        if self.is_loaded:
+            return
+            
+        try:
+            from database import db_manager
+            from models.budget_models import TripStatus, CityTier, EmployeeDesignation
+            from services.mongodb_service import mongodb_service
+            
+            # Fetch all completed/approved/pending trips
+            query = "SELECT * FROM app_completed_trips"
+            db_trips = await db_manager.execute_query(query)
+            
+            # Pre-fetch users to map SQLite IDs to MongoDB IDs
+            user_mapping = {} # pg_id -> mongo_id
+            
+            for db_trip in db_trips:
+                trip_id = db_trip['trip_id']
+                if trip_id in self.official_trips:
+                    continue
+                
+                pg_employee_id = db_trip['employee_id']
+                if pg_employee_id not in user_mapping:
+                    # Get user email from SQLite
+                    pg_user = await db_manager.get_user_by_id(pg_employee_id)
+                    if pg_user:
+                        email = pg_user['email']
+                        # Get user from MongoDB
+                        mongo_user = mongodb_service.find_user_by_email(email)
+                        if mongo_user:
+                            user_mapping[pg_employee_id] = str(mongo_user['_id'])
+                
+                mongo_id = user_mapping.get(pg_employee_id)
+                if not mongo_id:
+                    logger.warning(f"Could not map SQLite user {pg_employee_id} to MongoDB for trip {trip_id}")
+                    # Use the integer ID as a fallback string
+                    mongo_id = str(pg_employee_id)
+                
+                # Parse dates
+                start_date = db_trip['start_date']
+                if isinstance(start_date, str):
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                
+                end_date = db_trip['end_date']
+                if isinstance(end_date, str):
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                
+                # Reconstruct designation and tier
+                designation = self.get_designation_from_string(db_trip['designation'])
+                city_tier = CityTier(db_trip['city_tier'])
+                
+                # Recalculate duration and budget
+                duration_days = (end_date - start_date).days + 1
+                allocated_budget = self.calculate_trip_budget(designation, db_trip['destination_city'], duration_days)
+                total_allocated = clean_decimal(db_trip['allocated_budget'])
+                
+                # Create OfficialTrip object
+                trip = OfficialTrip(
+                    trip_id=trip_id,
+                    employee_id=mongo_id,
+                    employee_name=db_trip['employee_name'],
+                    designation=designation,
+                    trip_purpose=db_trip['trip_purpose'],
+                    destination_city=db_trip['destination_city'],
+                    destination_tier=city_tier,
+                    start_date=start_date,
+                    end_date=end_date,
+                    duration_days=duration_days,
+                    allocated_budget=allocated_budget,
+                    total_allocated=total_allocated,
+                    remaining_budget=total_allocated - clean_decimal(db_trip['total_amount']),
+                    status=TripStatus(db_trip['trip_status']),
+                    approved_by=str(db_trip.get('approved_by')) if db_trip.get('approved_by') else None,
+                    approved_at=db_trip.get('approved_at'),
+                    rejection_reason=db_trip.get('rejection_reason'),
+                    justification=db_trip.get('justification'),
+                    expenses_submitted=clean_decimal(db_trip['total_amount']),
+                    created_at=db_trip.get('created_at') if isinstance(db_trip.get('created_at'), datetime) else datetime.utcnow(),
+                    updated_at=db_trip.get('updated_at') if isinstance(db_trip.get('updated_at'), datetime) else datetime.utcnow()
+                )
+                
+                self.official_trips[trip_id] = trip
+                
+            self.is_loaded = True
+            logger.info(f"Successfully loaded {len(db_trips)} trips from database into memory")
+            
+        except Exception as e:
+            logger.error(f"Error loading trips from database: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    async def sync_trip_status(self, trip_id: str):
+        """Reload a specific trip from database to sync its status"""
+        try:
+            from database import db_manager
+            from models.budget_models import TripStatus, CityTier
+            
+            # Fetch updated trip from DB
+            query = "SELECT * FROM app_completed_trips WHERE trip_id = ?"
+            db_trip = await db_manager.fetch_one(query, trip_id)
+            
+            if not db_trip:
+                return
+                
+            # Update in-memory object if it exists
+            if trip_id in self.official_trips:
+                trip = self.official_trips[trip_id]
+                trip.status = TripStatus(db_trip['trip_status'])
+                trip.rejection_reason = db_trip.get('rejection_reason')
+                trip.expenses_submitted = clean_decimal(db_trip['total_amount'])
+                trip.remaining_budget = trip.total_allocated - trip.expenses_submitted
+                trip.updated_at = datetime.utcnow()
+                logger.info(f"Synced in-memory trip {trip_id} status to {trip.status}")
+                
+        except Exception as e:
+            logger.error(f"Error syncing trip status for {trip_id}: {e}")
 
 # Global service instance
 trip_budget_service = TripBudgetService()

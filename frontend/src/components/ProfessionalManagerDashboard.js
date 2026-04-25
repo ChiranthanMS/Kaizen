@@ -27,7 +27,7 @@ const ProfessionalManagerDashboard = () => {
     const [pendingBills, setPendingBills] = useState([]);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (!token) {
             navigate('/login');
             return;
@@ -39,11 +39,13 @@ const ProfessionalManagerDashboard = () => {
 
     const fetchProfile = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/profile', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -60,7 +62,7 @@ const ProfessionalManagerDashboard = () => {
         } catch (err) {
             console.error('Error fetching profile:', err);
             if (err.response?.status === 401) {
-                localStorage.removeItem('token');
+                sessionStorage.removeItem('token');
                 navigate('/login');
             }
         }
@@ -69,21 +71,37 @@ const ProfessionalManagerDashboard = () => {
     const fetchDashboardData = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             // Fetch all data in parallel - Use all-employees to get ALL employees, not just team
             const [allEmployeesRes, submissionsRes, requestsRes, completedRes] = await Promise.all([
                 fetch('http://localhost:8000/manager/all-employees', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 }),
                 fetch('http://localhost:8000/trip-budget/pending-trip-submissions', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 }),
                 fetch('http://localhost:8000/trip-budget/pending-requests', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 }),
                 fetch('http://localhost:8000/trip-budget/manager/completed-trips', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 })
             ]);
 
@@ -137,15 +155,15 @@ const ProfessionalManagerDashboard = () => {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: 'USD'
+            currency: 'INR'
         }).format(amount || 0);
     };
 
     const logout = () => {
-        localStorage.removeItem('token');
-        navigate('/login');
+        sessionStorage.removeItem('token');
+        window.location.href = '/login';
     };
 
     const goToProfile = () => {

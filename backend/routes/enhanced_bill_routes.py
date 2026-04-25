@@ -4,6 +4,7 @@ from models.user_models import TokenData
 from dependencies.auth_dependencies import get_current_user, get_current_employee
 from services.enhanced_bill_processor import enhanced_bill_processor
 from database import db_manager
+from utils import clean_decimal
 import logging
 from datetime import datetime, date
 from typing import Dict, Any, List
@@ -232,7 +233,7 @@ async def process_enhanced_bill(
                 
                 category = bill_data.get("category", "miscellaneous")
                 expense_type = expense_type_mapping.get(category, ExpenseType.MISCELLANEOUS)
-                amount = Decimal(str(bill_data.get("amount", 0)))
+                amount = clean_decimal(bill_data.get("amount", 0))
                 
                 # Validate expense against active trip
                 trip_validation = trip_budget_service.validate_trip_expense(

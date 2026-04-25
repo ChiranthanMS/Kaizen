@@ -36,7 +36,7 @@ function AuthPage() {
 
   // Check if user is already logged in
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (token) {
       navigate("/profile");
     }
@@ -168,7 +168,7 @@ function AuthPage() {
       if (!access_token) {
         throw new Error("Empty access token received");
       }
-      localStorage.setItem("token", access_token);
+      sessionStorage.setItem("token", access_token);
       showSuccessMessage(resMessage);
       
       // Fetch profile to determine role and route accordingly
@@ -186,7 +186,7 @@ function AuthPage() {
       const detail = err.response?.data?.detail || err.message || "Error logging in";
       showErrorMessage(detail);
       // Ensure no stale/empty token blocks routing
-      localStorage.removeItem("token");
+      sessionStorage.removeItem("token");
     } finally {
       setIsLoginLoading(false);
     }
@@ -270,7 +270,7 @@ function AuthPage() {
       
       // Save token
       const { access_token, message: resMessage } = res.data;
-      localStorage.setItem("token", access_token);
+      sessionStorage.setItem("token", access_token);
       showSuccessMessage(resMessage);
       
       // Redirect to profile page

@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from dotenv import load_dotenv
 import logging
+from decimal import Decimal
 
 load_dotenv()
 
@@ -20,6 +21,7 @@ class DatabaseManager:
     async def connect(self):
         """Initialize database connection"""
         try:
+            logger.info(f"Connecting to SQLite database at {SQLITE_DB_PATH}...")
             self.connection = await aiosqlite.connect(SQLITE_DB_PATH)
             self.connection.row_factory = aiosqlite.Row
             logger.info("✅ SQLite connection created successfully")
@@ -107,6 +109,7 @@ class DatabaseManager:
             reviewed_at TIMESTAMP,
             approval_comments TEXT,
             rejection_reason TEXT,
+            justification TEXT,
             submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -139,6 +142,7 @@ class DatabaseManager:
             approved_by INTEGER REFERENCES app_users(id),
             approval_comments TEXT,
             rejection_reason TEXT,
+            justification TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -186,6 +190,16 @@ class DatabaseManager:
             except Exception:
                 pass # Column already exists
                 
+            try:
+                await self.connection.execute("ALTER TABLE app_trip_submissions ADD COLUMN justification TEXT;")
+            except Exception:
+                pass
+                
+            try:
+                await self.connection.execute("ALTER TABLE app_completed_trips ADD COLUMN justification TEXT;")
+            except Exception:
+                pass
+
             for idx in create_indexes:
                 await self.connection.execute(idx)
             await self.connection.commit()
@@ -193,11 +207,23 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"❌ Failed to create tables: {e}")
 
+    def _convert_decimal(self, obj):
+        """Convert Decimal objects to float for SQLite compatibility"""
+        if isinstance(obj, Decimal):
+            return float(obj)
+        if isinstance(obj, (list, tuple)):
+            return type(obj)(self._convert_decimal(i) for i in obj)
+        if isinstance(obj, dict):
+            return {k: self._convert_decimal(v) for k, v in obj.items()}
+        return obj
+
     async def execute_query(self, query: str, *args) -> List[Dict[str, Any]]:
         if not self.connection:
             return []
         try:
-            async with self.connection.execute(query.replace('$1', '?').replace('$2', '?').replace('$3', '?').replace('$4', '?').replace('$5', '?').replace('$6', '?').replace('$7', '?').replace('$8', '?').replace('$9', '?').replace('$10', '?').replace('$11', '?').replace('$12', '?').replace('$13', '?').replace('$14', '?').replace('$15', '?').replace('$16', '?').replace('$17', '?').replace('$18', '?').replace('$19', '?'), args) as cursor:
+            # Convert any Decimals in args
+            safe_args = self._convert_decimal(args)
+            async with self.connection.execute(query.replace('$1', '?').replace('$2', '?').replace('$3', '?').replace('$4', '?').replace('$5', '?').replace('$6', '?').replace('$7', '?').replace('$8', '?').replace('$9', '?').replace('$10', '?').replace('$11', '?').replace('$12', '?').replace('$13', '?').replace('$14', '?').replace('$15', '?').replace('$16', '?').replace('$17', '?').replace('$18', '?').replace('$19', '?'), safe_args) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -208,8 +234,10 @@ class DatabaseManager:
         if not self.connection:
             return "ERROR: Database not connected"
         try:
+            # Convert any Decimals in args
+            safe_args = self._convert_decimal(args)
             cmd = command.replace('$1', '?').replace('$2', '?').replace('$3', '?').replace('$4', '?').replace('$5', '?').replace('$6', '?').replace('$7', '?').replace('$8', '?').replace('$9', '?').replace('$10', '?').replace('$11', '?').replace('$12', '?').replace('$13', '?').replace('$14', '?').replace('$15', '?').replace('$16', '?').replace('$17', '?').replace('$18', '?').replace('$19', '?')
-            await self.connection.execute(cmd, args)
+            await self.connection.execute(cmd, safe_args)
             await self.connection.commit()
             return "UPDATE 1"
         except Exception as e:
@@ -220,8 +248,10 @@ class DatabaseManager:
         if not self.connection:
             return None
         try:
+            # Convert any Decimals in args
+            safe_args = self._convert_decimal(args)
             cmd = query.replace('$1', '?').replace('$2', '?').replace('$3', '?').replace('$4', '?').replace('$5', '?').replace('$6', '?').replace('$7', '?').replace('$8', '?').replace('$9', '?').replace('$10', '?').replace('$11', '?').replace('$12', '?').replace('$13', '?').replace('$14', '?').replace('$15', '?').replace('$16', '?').replace('$17', '?').replace('$18', '?').replace('$19', '?')
-            async with self.connection.execute(cmd, args) as cursor:
+            async with self.connection.execute(cmd, safe_args) as cursor:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
         except Exception as e:
@@ -237,17 +267,17 @@ class DatabaseManager:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
-            cursor = await self.connection.execute(
-                query,
-                (
-                    bill_data.get('employee_id'), bill_data.get('filename'), bill_data.get('file_type'),
-                    bill_data.get('file_hash'), bill_data.get('date'), bill_data.get('vendor'), bill_data.get('category'),
-                    bill_data.get('amount'), bill_data.get('subtotal'), bill_data.get('tax'),
-                    bill_data.get('discount'), bill_data.get('currency', 'USD'), bill_data.get('remarks'),
-                    bill_data.get('raw_text'), bill_data.get('confidence_score'), bill_data.get('processing_time'),
-                    bill_data.get('status', 'pending')
-                )
+            params = (
+                bill_data.get('employee_id'), bill_data.get('filename'), bill_data.get('file_type'),
+                bill_data.get('file_hash'), bill_data.get('date'), bill_data.get('vendor'), bill_data.get('category'),
+                bill_data.get('amount'), bill_data.get('subtotal'), bill_data.get('tax'),
+                bill_data.get('discount'), bill_data.get('currency', 'USD'), bill_data.get('remarks'),
+                bill_data.get('raw_text'), bill_data.get('confidence_score'), bill_data.get('processing_time'),
+                bill_data.get('status', 'pending')
             )
+            # Convert any Decimals
+            safe_params = self._convert_decimal(params)
+            cursor = await self.connection.execute(query, safe_params)
             await self.connection.commit()
             return cursor.lastrowid
         except Exception as e:
@@ -263,18 +293,18 @@ class DatabaseManager:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
-            cursor = await self.connection.execute(
-                query,
-                (
-                    bill_data.get('employee_id'), bill_data.get('trip_id'), bill_data.get('filename'),
-                    bill_data.get('file_type'), bill_data.get('file_hash'), bill_data.get('date'), bill_data.get('vendor'),
-                    bill_data.get('category'), bill_data.get('amount'), bill_data.get('subtotal'),
-                    bill_data.get('tax'), bill_data.get('discount'), bill_data.get('currency', 'USD'),
-                    bill_data.get('remarks'), bill_data.get('raw_text'), bill_data.get('confidence_score'),
-                    bill_data.get('processing_time'), bill_data.get('status', 'pending'), bill_data.get('trip_status', 'individual'),
-                    bill_data.get('rejection_reason')
-                )
+            params = (
+                bill_data.get('employee_id'), bill_data.get('trip_id'), bill_data.get('filename'),
+                bill_data.get('file_type'), bill_data.get('file_hash'), bill_data.get('date'), bill_data.get('vendor'),
+                bill_data.get('category'), bill_data.get('amount'), bill_data.get('subtotal'),
+                bill_data.get('tax'), bill_data.get('discount'), bill_data.get('currency', 'USD'),
+                bill_data.get('remarks'), bill_data.get('raw_text'), bill_data.get('confidence_score'),
+                bill_data.get('processing_time'), bill_data.get('status', 'pending'), bill_data.get('trip_status', 'individual'),
+                bill_data.get('rejection_reason')
             )
+            # Convert any Decimals
+            safe_params = self._convert_decimal(params)
+            cursor = await self.connection.execute(query, safe_params)
             await self.connection.commit()
             return cursor.lastrowid
         except Exception as e:
@@ -318,6 +348,22 @@ class DatabaseManager:
         query = "UPDATE app_bills SET justification = ?, status = 'under_review', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         result = await self.execute_command(query, justification, bill_id)
         return "UPDATE" in result
+
+    async def update_trip_justification(self, trip_id: str, justification: str) -> bool:
+        """Update justification for a rejected trip submission or completed trip"""
+        try:
+            # Update trip submission if it exists
+            query1 = "UPDATE app_trip_submissions SET justification = ?, submission_status = 'submitted', updated_at = CURRENT_TIMESTAMP WHERE trip_id = ?"
+            await self.execute_command(query1, justification, trip_id)
+            
+            # Update completed trip if it exists
+            query2 = "UPDATE app_completed_trips SET justification = ?, submission_status = 'submitted', updated_at = CURRENT_TIMESTAMP WHERE trip_id = ?"
+            await self.execute_command(query2, justification, trip_id)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update trip justification: {e}")
+            return False
 
     async def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         query = "SELECT * FROM app_users WHERE id = ?"
@@ -407,16 +453,18 @@ class DatabaseManager:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
-            cursor = await self.connection.execute(
-                query,
-                (
-                    submission_data.get('trip_id'), submission_data.get('employee_id'), submission_data.get('employee_name'),
-                    submission_data.get('trip_purpose'), submission_data.get('destination_city'), submission_data.get('start_date'),
-                    submission_data.get('end_date'), submission_data.get('duration_days'), submission_data.get('total_bills'),
-                    submission_data.get('total_amount'), submission_data.get('allocated_budget'), submission_data.get('budget_utilization'),
-                    submission_data.get('manager_id')
-                )
+            params = (
+                submission_data.get('trip_id'), submission_data.get('employee_id'), submission_data.get('employee_name'),
+                submission_data.get('trip_purpose'), submission_data.get('destination_city'), submission_data.get('start_date'),
+                submission_data.get('end_date'), submission_data.get('duration_days'), submission_data.get('total_bills'),
+                submission_data.get('total_amount'), submission_data.get('allocated_budget'), submission_data.get('budget_utilization'),
+                submission_data.get('manager_id')
             )
+            
+            # Convert any Decimals in parameters
+            safe_params = self._convert_decimal(params)
+            
+            cursor = await self.connection.execute(query, safe_params)
             await self.connection.commit()
             return cursor.lastrowid
         except Exception as e:
@@ -477,7 +525,7 @@ class DatabaseManager:
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """
-            await self.connection.execute(update_submission, (manager_id, comments, submission_id))
+            await self.connection.execute(update_submission, self._convert_decimal((manager_id, comments, submission_id)))
             
             update_bills = """
             UPDATE app_bills 
@@ -488,7 +536,20 @@ class DatabaseManager:
                 updated_at = CURRENT_TIMESTAMP
             WHERE trip_id = ?
             """
-            await self.connection.execute(update_bills, (manager_id, trip_id))
+            await self.connection.execute(update_bills, self._convert_decimal((manager_id, trip_id)))
+            
+            # Also update the completed trips record if it exists
+            update_completed = """
+            UPDATE app_completed_trips
+            SET submission_status = 'approved',
+                approved_by = ?,
+                approved_at = CURRENT_TIMESTAMP,
+                approval_comments = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE trip_id = ?
+            """
+            await self.connection.execute(update_completed, self._convert_decimal((manager_id, comments, trip_id)))
+            
             await self.connection.commit()
             return True
         except Exception as e:
@@ -512,7 +573,7 @@ class DatabaseManager:
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """
-            await self.connection.execute(update_submission, (manager_id, reason, submission_id))
+            await self.connection.execute(update_submission, self._convert_decimal((manager_id, reason, submission_id)))
             
             update_bills = """
             UPDATE app_bills 
@@ -524,7 +585,18 @@ class DatabaseManager:
                 updated_at = CURRENT_TIMESTAMP
             WHERE trip_id = ?
             """
-            await self.connection.execute(update_bills, (manager_id, reason, trip_id))
+            await self.connection.execute(update_bills, self._convert_decimal((manager_id, reason, trip_id)))
+            
+            # Also update the completed trips record if it exists
+            update_completed = """
+            UPDATE app_completed_trips
+            SET submission_status = 'rejected',
+                rejection_reason = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE trip_id = ?
+            """
+            await self.connection.execute(update_completed, self._convert_decimal((reason, trip_id)))
+            
             await self.connection.commit()
             return True
         except Exception as e:
@@ -550,18 +622,19 @@ class DatabaseManager:
             updated_at = CURRENT_TIMESTAMP
         """
         try:
-            cursor = await self.connection.execute(
-                query,
-                (
-                    trip_data.get('trip_id'), trip_data.get('employee_id'), trip_data.get('employee_name'),
-                    trip_data.get('trip_purpose'), trip_data.get('destination_city'), trip_data.get('start_date'),
-                    trip_data.get('end_date'), trip_data.get('duration_days'), trip_data.get('designation'),
-                    trip_data.get('city_tier'), trip_data.get('allocated_budget'), trip_data.get('total_bills', 0),
-                    trip_data.get('total_amount', 0), trip_data.get('budget_utilization', 0),
-                    trip_data.get('trip_status', 'completed'), trip_data.get('submission_status', 'not_submitted'),
-                    trip_data.get('manager_id'), trip_data.get('approved_by'), trip_data.get('approved_at')
-                )
+            params = (
+                trip_data.get('trip_id'), trip_data.get('employee_id'), trip_data.get('employee_name'),
+                trip_data.get('trip_purpose'), trip_data.get('destination_city'), trip_data.get('start_date'),
+                trip_data.get('end_date'), trip_data.get('duration_days'), trip_data.get('designation'),
+                trip_data.get('city_tier'), trip_data.get('allocated_budget'), trip_data.get('total_bills', 0),
+                trip_data.get('total_amount', 0), trip_data.get('budget_utilization', 0),
+                trip_data.get('trip_status', 'completed'), trip_data.get('submission_status', 'not_submitted'),
+                trip_data.get('manager_id'), trip_data.get('approved_by'), trip_data.get('approved_at')
             )
+            # Convert any Decimals
+            safe_params = self._convert_decimal(params)
+            
+            cursor = await self.connection.execute(query, safe_params)
             await self.connection.commit()
             return cursor.lastrowid
         except Exception as e:

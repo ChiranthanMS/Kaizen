@@ -29,7 +29,7 @@ const ProfessionalEmployeeDashboard = () => {
     const [lastRefresh, setLastRefresh] = useState(null);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (!token) {
             navigate('/login');
             return;
@@ -59,7 +59,7 @@ const ProfessionalEmployeeDashboard = () => {
 
     const fetchProfile = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/profile', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -80,7 +80,7 @@ const ProfessionalEmployeeDashboard = () => {
         } catch (err) {
             console.error('Error fetching profile:', err);
             if (err.response?.status === 401) {
-                localStorage.removeItem('token');
+                sessionStorage.removeItem('token');
                 navigate('/login');
             }
         }
@@ -89,7 +89,7 @@ const ProfessionalEmployeeDashboard = () => {
     const fetchDashboardData = async (silent = false) => {
         try {
             if (!silent) setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             // Fetch employee bills and trips data
             const [billsRes, completedTripsRes] = await Promise.all([
@@ -100,7 +100,7 @@ const ProfessionalEmployeeDashboard = () => {
                         'Pragma': 'no-cache'
                     }
                 }).catch(() => ({ ok: false })),
-                fetch('http://localhost:8000/trip-budget/employee/completed-trips', {
+                fetch('http://localhost:8000/trip-budget/completed-trips', {
                     headers: { 
                         'Authorization': `Bearer ${token}`,
                         'Cache-Control': 'no-cache',
@@ -149,15 +149,15 @@ const ProfessionalEmployeeDashboard = () => {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: 'USD'
+            currency: 'INR'
         }).format(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('en-IN', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
@@ -177,7 +177,7 @@ const ProfessionalEmployeeDashboard = () => {
     };
 
     const handleDownloadReport = (billId) => {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         window.open(`http://localhost:8000/bills/bill/${billId}/report?token=${token}`, '_blank');
     };
 
@@ -186,7 +186,7 @@ const ProfessionalEmployeeDashboard = () => {
         if (!text || text.trim() === '') return;
         
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch(`http://localhost:8000/bills/bill/${billId}/justify?justification=${encodeURIComponent(text)}`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -205,8 +205,8 @@ const ProfessionalEmployeeDashboard = () => {
     };
 
     const logout = () => {
-        localStorage.removeItem('token');
-        navigate('/login');
+        sessionStorage.removeItem('token');
+        window.location.href = '/login';
     };
 
     const goToProfile = () => {

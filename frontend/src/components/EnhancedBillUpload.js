@@ -17,9 +17,13 @@ const EnhancedBillUpload = ({ onUploadSuccess }) => {
 
   const checkProcessingStatus = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.get('http://localhost:8000/bills/processing-status', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       setProcessingStatus(response.data);
     } catch (error) {
@@ -71,7 +75,7 @@ const EnhancedBillUpload = ({ onUploadSuccess }) => {
     formData.append('file', file);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.post(
         'http://localhost:8000/upload',
         formData,
@@ -79,6 +83,8 @@ const EnhancedBillUpload = ({ onUploadSuccess }) => {
           headers: {
             'Content-Type': 'multipart/form-data',
             Authorization: `Bearer ${token}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           },
         }
       );
@@ -106,7 +112,7 @@ const EnhancedBillUpload = ({ onUploadSuccess }) => {
 
   const formatCurrency = (amount, currency = 'INR') => {
     if (!amount) return 'N/A';
-    const symbol = currency === 'INR' ? '₹' : currency === 'USD' ? '$' : currency;
+    const symbol = currency === 'INR' ? '₹' : currency === 'INR' ? '$' : currency;
     return `${symbol}${parseFloat(amount).toFixed(2)}`;
   };
 

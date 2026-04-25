@@ -65,6 +65,11 @@ from database import startup_database, shutdown_database
 async def lifespan(app: FastAPI):
     # Startup
     await startup_database()
+    
+    # Load trip budget data into memory
+    from services.trip_budget_service import trip_budget_service
+    await trip_budget_service.load_from_db()
+    
     yield
     # Shutdown
     await shutdown_database()

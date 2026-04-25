@@ -74,6 +74,7 @@ class OfficialTrip(BaseModel):
     rejected_by: Optional[str] = Field(None, description="Manager who rejected the trip")
     rejected_at: Optional[datetime] = Field(None, description="Rejection timestamp")
     rejection_reason: Optional[str] = Field(None, description="Reason for rejection")
+    justification: Optional[str] = Field(None, description="Employee response/justification for rejection")
     
     # Expense tracking
     expenses_submitted: Decimal = Field(default=Decimal('0'), description="Total expenses submitted")
@@ -197,6 +198,7 @@ class TripSubmission(BaseModel):
     reviewed_at: Optional[datetime] = Field(None, description="Review timestamp")
     approval_comments: Optional[str] = Field(None, description="Approval comments")
     rejection_reason: Optional[str] = Field(None, description="Rejection reason")
+    justification: Optional[str] = Field(None, description="Employee justification")
     submitted_at: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

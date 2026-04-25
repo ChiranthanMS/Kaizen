@@ -8,6 +8,7 @@ const TripBudgetDashboard = () => {
   const [error, setError] = useState(null);
   const [showCreateTrip, setShowCreateTrip] = useState(false);
   const [showBudgetCalculator, setShowBudgetCalculator] = useState(false);
+  const [justificationTexts, setJustificationTexts] = useState({});
 
   // Trip creation form
   const [tripForm, setTripForm] = useState({
@@ -32,9 +33,13 @@ const TripBudgetDashboard = () => {
 
   const fetchTrips = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.get('http://localhost:8000/trip-budget/my-trips', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       
       if (response.data.success) {
@@ -48,16 +53,23 @@ const TripBudgetDashboard = () => {
 
   const fetchActiveTrip = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.get('http://localhost:8000/trip-budget/active-trip', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       
       if (response.data.success && response.data.active_trip) {
         setActiveTrip(response.data.active_trip);
+      } else {
+        setActiveTrip(null);
       }
     } catch (err) {
       console.error('Error fetching active trip:', err);
+      setActiveTrip(null);
     } finally {
       setLoading(false);
     }
@@ -66,9 +78,13 @@ const TripBudgetDashboard = () => {
   const handleCreateTrip = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.post('http://localhost:8000/trip-budget/create-trip', tripForm, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       
       if (response.data.success) {
@@ -86,10 +102,14 @@ const TripBudgetDashboard = () => {
   const handleCalculateBudget = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.get('http://localhost:8000/trip-budget/budget-calculator', {
         params: calculatorForm,
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       
       if (response.data.success) {
@@ -103,9 +123,13 @@ const TripBudgetDashboard = () => {
 
   const handleActivateTrip = async (tripId) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.post(`http://localhost:8000/trip-budget/activate-trip?trip_id=${tripId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       
       if (response.data.success) {
@@ -127,7 +151,7 @@ const TripBudgetDashboard = () => {
     if (!confirmComplete) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.post(`http://localhost:8000/trip-budget/complete-trip?trip_id=${tripId}`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -152,7 +176,7 @@ const TripBudgetDashboard = () => {
     if (submissionNotes === null) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.post('http://localhost:8000/trip-budget/submit-trip', {
         trip_id: tripId,
         submission_notes: submissionNotes || ''
@@ -167,6 +191,33 @@ const TripBudgetDashboard = () => {
     } catch (err) {
       console.error('Error submitting trip for approval:', err);
       alert('Failed to submit trip for approval: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleSubmitJustification = async (tripId) => {
+    const justification = justificationTexts[tripId];
+    if (!justification || !justification.trim()) {
+      alert('Please provide a justification');
+      return;
+    }
+
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await axios.post('http://localhost:8000/trip-budget/submit-trip-justification', {
+        trip_id: tripId,
+        justification: justification
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.success) {
+        alert('✅ Justification submitted successfully! The trip status has been updated to pending for manager review.');
+        setJustificationTexts(prev => ({ ...prev, [tripId]: '' }));
+        fetchTrips();
+      }
+    } catch (err) {
+      console.error('Error submitting justification:', err);
+      alert('Failed to submit justification: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -185,7 +236,8 @@ const TripBudgetDashboard = () => {
       approved: '#28a745',
       active: '#007bff',
       completed: '#6c757d',
-      cancelled: '#dc3545'
+      cancelled: '#dc3545',
+      rejected: '#e74c3c'
     };
     return colors[status] || '#6c757d';
   };
@@ -231,7 +283,7 @@ const TripBudgetDashboard = () => {
               </span>
             </div>
             
-            <div className="budget-breakdown">
+            <div className="dashboard-budget-breakdown">
               {Object.entries(activeTrip.allocated_budgets).map(([expenseType, allocated]) => {
                 const used = activeTrip.used_budgets[expenseType] || 0;
                 const remaining = activeTrip.remaining_budgets[expenseType] || allocated;
@@ -359,6 +411,36 @@ const TripBudgetDashboard = () => {
                   {trip.status === 'pending' && (
                     <span className="status-info">⏳ Waiting for manager approval</span>
                   )}
+                  {trip.status === 'rejected' && (
+                    <div className="rejection-handling" style={{ width: '100%', marginTop: '15px' }}>
+                      {trip.rejection_reason && (
+                        <div className="rejection-reason" style={{ backgroundColor: '#fdeaea', color: '#e74c3c', padding: '10px', borderRadius: '8px', marginBottom: '10px', borderLeft: '4px solid #e74c3c' }}>
+                          <strong>❌ Reason:</strong> {trip.rejection_reason}
+                        </div>
+                      )}
+                      {trip.justification && (
+                        <div className="justification-display" style={{ backgroundColor: '#e3f2fd', color: '#1976d2', padding: '10px', borderRadius: '8px', marginBottom: '10px', borderLeft: '4px solid #1976d2' }}>
+                          <strong>📤 Your Justification:</strong> {trip.justification}
+                        </div>
+                      )}
+                      <div className="justification-input" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <textarea
+                          placeholder="Provide justification or response to rejection..."
+                          value={justificationTexts[trip.trip_id] || ''}
+                          onChange={(e) => setJustificationTexts(prev => ({ ...prev, [trip.trip_id]: e.target.value }))}
+                          style={{ padding: '10px', borderRadius: '8px', border: '1px solid #ddd', resize: 'vertical' }}
+                          rows="2"
+                        />
+                        <button 
+                          onClick={() => handleSubmitJustification(trip.trip_id)}
+                          className="submit-justification-btn"
+                          style={{ background: '#007bff', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
+                        >
+                          Submit Justification
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -481,7 +563,7 @@ const TripBudgetDashboard = () => {
                   <p><strong>Duration:</strong> {calculatedBudget.duration_days} days</p>
                   <p><strong>Designation:</strong> {calculatedBudget.designation.replace('_', ' ').toUpperCase()}</p>
                 </div>
-                <div className="budget-breakdown">
+                <div className="dashboard-budget-breakdown">
                   {Object.entries(calculatedBudget.budget_breakdown).map(([type, amount]) => (
                     <div key={type} className="budget-item">
                       <span>{type.replace('_', ' ').toUpperCase()}</span>
@@ -552,7 +634,7 @@ const TripBudgetDashboard = () => {
           font-size: 0.9em;
         }
 
-        .budget-breakdown {
+        .dashboard-budget-breakdown {
           margin-bottom: 20px;
         }
 
@@ -624,6 +706,13 @@ const TripBudgetDashboard = () => {
           background: #f8f9fa;
           border-radius: 15px;
           margin-bottom: 30px;
+          color: #2c3e50;
+        }
+        .no-active-trip h2 {
+          color: #2c3e50;
+        }
+        .no-active-trip p {
+          color: #6c757d;
         }
 
         .action-buttons {
@@ -657,6 +746,14 @@ const TripBudgetDashboard = () => {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
           gap: 20px;
+        }
+
+        .no-trips {
+          text-align: center;
+          padding: 40px;
+          background: white;
+          border-radius: 15px;
+          color: #2c3e50;
         }
 
         .trip-card {
@@ -766,6 +863,8 @@ const TripBudgetDashboard = () => {
           border: 2px solid #e1e8ed;
           border-radius: 8px;
           font-size: 1em;
+          color: #2c3e50;
+          background: white;
         }
 
         .form-actions {

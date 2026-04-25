@@ -13,8 +13,19 @@ from models.user_models import TokenData
 from services.trip_budget_service import trip_budget_service
 from services.mongodb_service import mongodb_service
 from dependencies.auth_dependencies import get_current_user
+from utils import clean_decimal
 
 logger = logging.getLogger(__name__)
+
+def safe_isoformat(obj):
+    """Safely convert date/datetime to ISO string, handling strings and None"""
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return obj
+    if hasattr(obj, 'isoformat'):
+        return obj.isoformat()
+    return str(obj)
 
 router = APIRouter(prefix="/trip-budget", tags=["Trip Budget Management"])
 
@@ -38,6 +49,59 @@ async def debug_trip_request(
             "role": current_user.role
         }
     }
+
+@router.post("/submit-trip-justification", response_model=Dict)
+async def update_trip_justification(
+    request: dict,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Provide a justification/response for a rejected trip submission"""
+    
+    try:
+        trip_id = request.get('trip_id')
+        justification = request.get('justification')
+        
+        if not trip_id or not justification:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="trip_id and justification are required"
+            )
+        
+        # Check if trip exists and belongs to user
+        trip = trip_budget_service.get_trip_by_id(trip_id)
+        if not trip and current_user.role != "manager":
+            # If not in memory, it might be in PostgreSQL
+            from database import db_manager
+            db_trip = await db_manager.fetch_one("SELECT * FROM app_completed_trips WHERE trip_id = ?", trip_id)
+            if not db_trip:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Trip not found"
+                )
+        
+        # Update justification
+        success = await trip_budget_service.update_trip_justification(trip_id, justification)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update trip justification"
+            )
+            
+        return {
+            "success": True,
+            "message": "Justification submitted successfully. The trip will be reviewed again.",
+            "trip_id": trip_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating trip justification: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not update justification: {str(e)}"
+        )
 
 @router.post("/create-trip", response_model=Dict)
 async def create_trip_request(
@@ -78,7 +142,7 @@ async def create_trip_request(
         
         # Create trip request
         try:
-            trip = trip_budget_service.create_trip_request(
+            trip = await trip_budget_service.create_trip_request(
                 employee_id=current_user.user_id,
                 employee_name=current_user.full_name or current_user.username,
                 designation=designation,
@@ -108,8 +172,8 @@ async def create_trip_request(
                 "destination": trip.destination_city,
                 "destination_tier": trip.destination_tier.value,
                 "duration_days": trip.duration_days,
-                "start_date": trip.start_date.isoformat(),
-                "end_date": trip.end_date.isoformat(),
+                "start_date": safe_isoformat(trip.start_date),
+                "end_date": safe_isoformat(trip.end_date),
                 "status": trip.status.value,
                 "allocated_budget": {k: float(v) for k, v in trip.allocated_budget.items()},
                 "total_allocated": float(trip.total_allocated)
@@ -159,8 +223,8 @@ async def get_my_trips(
                 "purpose": trip.trip_purpose,
                 "destination": trip.destination_city,
                 "destination_tier": trip.destination_tier.value,
-                "start_date": trip.start_date.isoformat(),
-                "end_date": trip.end_date.isoformat(),
+                "start_date": safe_isoformat(trip.start_date),
+                "end_date": safe_isoformat(trip.end_date),
                 "duration_days": trip.duration_days,
                 "status": trip.status.value,
                 "allocated_budget": {k: float(v) for k, v in trip.allocated_budget.items()},
@@ -168,8 +232,10 @@ async def get_my_trips(
                 "expenses_submitted": float(trip.expenses_submitted),
                 "remaining_budget": float(trip.remaining_budget),
                 "approved_by": trip.approved_by,
-                "approved_at": trip.approved_at.isoformat() if trip.approved_at else None,
-                "created_at": trip.created_at.isoformat()
+                "approved_at": safe_isoformat(trip.approved_at) if trip.approved_at else None,
+                "rejection_reason": trip.rejection_reason,
+                "justification": trip.justification,
+                "created_at": safe_isoformat(trip.created_at)
             })
         
         return {
@@ -213,8 +279,8 @@ async def get_active_trip(current_user: TokenData = Depends(get_current_user)):
                 "trip_id": session.trip_id,
                 "destination": trip.destination_city if trip else "Unknown",
                 "destination_tier": session.destination_tier.value,
-                "trip_start": session.trip_start.isoformat(),
-                "trip_end": session.trip_end.isoformat(),
+                "trip_start": safe_isoformat(session.trip_start),
+                "trip_end": safe_isoformat(session.trip_end),
                 "allocated_budgets": {k: float(v) for k, v in session.allocated_budgets.items()},
                 "used_budgets": {k: float(v) for k, v in session.used_budgets.items()},
                 "remaining_budgets": {k: float(v) for k, v in session.remaining_budgets.items()},
@@ -251,7 +317,7 @@ async def validate_trip_expense(
         validation_result = trip_budget_service.validate_trip_expense(
             employee_id=current_user.user_id,
             expense_type=expense_type_enum,
-            amount=Decimal(str(amount))
+            amount=clean_decimal(amount)
         )
         
         return validation_result
@@ -304,8 +370,8 @@ async def calculate_trip_budget(
                 "destination_city": destination_city,
                 "city_tier": city_tier.value,
                 "duration_days": duration_days,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
+                "start_date": safe_isoformat(start_date),
+                "end_date": safe_isoformat(end_date),
                 "designation": designation.value,
                 "budget_breakdown": {k: float(v) for k, v in budget_allocation.items()},
                 "total_budget": float(total_budget)
@@ -518,13 +584,15 @@ async def get_pending_trip_requests(
                 "purpose": trip.trip_purpose,
                 "destination": trip.destination_city,
                 "destination_tier": trip.destination_tier.value,
-                "start_date": trip.start_date.isoformat(),
-                "end_date": trip.end_date.isoformat(),
+                "start_date": safe_isoformat(trip.start_date),
+                "end_date": safe_isoformat(trip.end_date),
                 "duration_days": trip.duration_days,
                 "status": trip.status.value,
                 "allocated_budget": {k: float(v) for k, v in trip.allocated_budget.items()},
                 "total_allocated": float(trip.total_allocated),
-                "created_at": trip.created_at.isoformat()
+                "rejection_reason": trip.rejection_reason,
+                "justification": trip.justification,
+                "created_at": safe_isoformat(trip.created_at)
             })
         
         return {
@@ -558,7 +626,7 @@ async def approve_trip_request(
         # Convert budget adjustments to Decimal if provided
         decimal_adjustments = None
         if request.budget_adjustments:
-            decimal_adjustments = {k: Decimal(str(v)) for k, v in request.budget_adjustments.items()}
+            decimal_adjustments = {k: clean_decimal(v) for k, v in request.budget_adjustments.items()}
         
         # Approve trip
         trip = await trip_budget_service.approve_trip(
@@ -575,13 +643,13 @@ async def approve_trip_request(
                 "trip_id": trip.trip_id,
                 "employee_name": trip.employee_name,
                 "destination": trip.destination_city,
-                "start_date": trip.start_date.isoformat(),
-                "end_date": trip.end_date.isoformat(),
+                "start_date": safe_isoformat(trip.start_date),
+                "end_date": safe_isoformat(trip.end_date),
                 "status": trip.status.value,
                 "allocated_budget": {k: float(v) for k, v in trip.allocated_budget.items()},
                 "total_allocated": float(trip.total_allocated),
                 "approved_by": trip.approved_by,
-                "approved_at": trip.approved_at.isoformat()
+                "approved_at": safe_isoformat(trip.approved_at)
             }
         }
         
@@ -637,7 +705,7 @@ async def reject_trip_request(
                 "destination": trip.destination_city,
                 "status": trip.status.value,
                 "rejected_by": trip.rejected_by,
-                "rejected_at": trip.rejected_at.isoformat() if trip.rejected_at else None,
+                "rejected_at": safe_isoformat(trip.rejected_at) if trip.rejected_at else None,
                 "rejection_reason": trip.rejection_reason
             }
         }
@@ -688,8 +756,8 @@ async def activate_trip_for_expenses(
             "active_session": {
                 "trip_id": session.trip_id,
                 "destination_tier": session.destination_tier.value,
-                "trip_start": session.trip_start.isoformat(),
-                "trip_end": session.trip_end.isoformat(),
+                "trip_start": safe_isoformat(session.trip_start),
+                "trip_end": safe_isoformat(session.trip_end),
                 "allocated_budgets": {k: float(v) for k, v in session.allocated_budgets.items()},
                 "remaining_budgets": {k: float(v) for k, v in session.remaining_budgets.items()}
             }
@@ -707,51 +775,13 @@ async def activate_trip_for_expenses(
             detail=f"Could not activate trip: {str(e)}"
         )
 
-@router.post("/complete-trip", response_model=Dict)
-async def complete_trip(
-    trip_id: str,
-    current_user: TokenData = Depends(get_current_user)
-):
-    """Mark a trip as completed"""
-    
-    try:
-        # Get trip details
-        trip = trip_budget_service.get_trip_by_id(trip_id)
-        
-        if not trip:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Trip not found"
-            )
-        
-        # Check if user owns the trip or is a manager
-        if trip.employee_id != current_user.user_id and current_user.role != "manager":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only complete your own trips"
-            )
-        
-        # Complete trip
-        completed_trip = trip_budget_service.complete_trip(trip_id)
-        
-        return {
-            "success": True,
-            "trip_id": trip_id,
-            "message": f"Trip marked as completed",
-            "completed_trip": {
-                "trip_id": completed_trip.trip_id,
-                "status": completed_trip.status.value,
-                "total_allocated": float(completed_trip.total_allocated),
-                "expenses_submitted": float(completed_trip.expenses_submitted),
-                "remaining_budget": float(completed_trip.remaining_budget)
-            }
-        }
-        
-    except ValueError as e:
+    except Exception as e:
+        logger.error(f"Error activating trip {trip_id} for user {current_user.user_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not activate trip: {str(e)}"
         )
+
     except Exception as e:
         logger.error(f"Error completing trip {trip_id} for user {current_user.user_id}: {e}")
         raise HTTPException(
@@ -822,14 +852,16 @@ async def get_pending_trip_submissions(
                 "employee_name": submission['employee_name'],
                 "trip_purpose": submission['trip_purpose'],
                 "destination_city": submission['destination_city'],
-                "start_date": submission['start_date'].isoformat() if submission['start_date'] else None,
-                "end_date": submission['end_date'].isoformat() if submission['end_date'] else None,
+                "start_date": safe_isoformat(submission['start_date']) if submission['start_date'] else None,
+                "end_date": safe_isoformat(submission['end_date']) if submission['end_date'] else None,
                 "duration_days": submission['duration_days'],
                 "total_bills": submission['actual_bills_count'],
                 "total_amount": float(submission['actual_total_amount']),
                 "allocated_budget": float(submission['allocated_budget']),
                 "budget_utilization": float(submission['budget_utilization']),
-                "submitted_at": submission['submitted_at'].isoformat() if submission['submitted_at'] else None
+                "rejection_reason": submission.get('rejection_reason'),
+                "justification": submission.get('justification'),
+                "submitted_at": safe_isoformat(submission['submitted_at']) if submission['submitted_at'] else None
             })
         
         return {
@@ -886,7 +918,7 @@ async def get_trip_submission_details(
             formatted_bills.append({
                 "bill_id": bill['id'],
                 "filename": bill['filename'],
-                "date": bill['date'].isoformat() if bill['date'] else None,
+                "date": safe_isoformat(bill['date']) if bill['date'] else None,
                 "vendor": bill['vendor'],
                 "category": bill['category'],
                 "amount": float(bill['amount']),
@@ -895,7 +927,7 @@ async def get_trip_submission_details(
                 "currency": bill['currency'],
                 "confidence_score": float(bill['confidence_score']) if bill['confidence_score'] else None,
                 "status": bill['status'],
-                "created_at": bill['created_at'].isoformat() if bill['created_at'] else None
+                "created_at": safe_isoformat(bill['created_at']) if bill['created_at'] else None
             })
         
         return {
@@ -906,15 +938,17 @@ async def get_trip_submission_details(
                 "employee_name": submission['employee_name'],
                 "trip_purpose": submission['trip_purpose'],
                 "destination_city": submission['destination_city'],
-                "start_date": submission['start_date'].isoformat() if submission['start_date'] else None,
-                "end_date": submission['end_date'].isoformat() if submission['end_date'] else None,
+                "start_date": safe_isoformat(submission['start_date']) if submission['start_date'] else None,
+                "end_date": safe_isoformat(submission['end_date']) if submission['end_date'] else None,
                 "duration_days": submission['duration_days'],
                 "total_bills": len(formatted_bills),
                 "total_amount": sum(bill['amount'] for bill in formatted_bills),
                 "allocated_budget": float(submission['allocated_budget']),
                 "budget_utilization": float(submission['budget_utilization']),
                 "submission_status": submission['submission_status'],
-                "submitted_at": submission['submitted_at'].isoformat() if submission['submitted_at'] else None
+                "rejection_reason": submission.get('rejection_reason'),
+                "justification": submission.get('justification'),
+                "submitted_at": safe_isoformat(submission['submitted_at']) if submission['submitted_at'] else None
             },
             "bills": formatted_bills,
             "message": f"Retrieved details for trip submission {submission_id}"
@@ -977,6 +1011,12 @@ async def approve_trip_submission(
         
         # Approve the submission
         success = await db_manager.approve_trip_submission(submission_id, manager_id, comments)
+        
+        if success:
+            # Get trip_id to sync in memory
+            submission = await db_manager.fetch_one("SELECT trip_id FROM app_trip_submissions WHERE id = ?", submission_id)
+            if submission:
+                await trip_budget_service.sync_trip_status(submission['trip_id'])
         
         if not success:
             raise HTTPException(
@@ -1047,6 +1087,12 @@ async def reject_trip_submission(
         # Reject the submission
         success = await db_manager.reject_trip_submission(submission_id, manager_id, reason)
         
+        if success:
+            # Get trip_id to sync in memory
+            submission = await db_manager.fetch_one("SELECT trip_id FROM app_trip_submissions WHERE id = ?", submission_id)
+            if submission:
+                await trip_budget_service.sync_trip_status(submission['trip_id'])
+        
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1115,8 +1161,8 @@ async def get_completed_trips(
                 "trip_id": trip['trip_id'],
                 "trip_purpose": trip['trip_purpose'],
                 "destination_city": trip['destination_city'],
-                "start_date": trip['start_date'].isoformat() if trip['start_date'] else None,
-                "end_date": trip['end_date'].isoformat() if trip['end_date'] else None,
+                "start_date": safe_isoformat(trip['start_date']) if trip['start_date'] else None,
+                "end_date": safe_isoformat(trip['end_date']) if trip['end_date'] else None,
                 "duration_days": trip['duration_days'],
                 "designation": trip['designation'],
                 "city_tier": trip['city_tier'],
@@ -1128,11 +1174,12 @@ async def get_completed_trips(
                 "budget_utilization": float(trip['budget_utilization']) if trip['budget_utilization'] else 0,
                 "trip_status": trip['trip_status'],
                 "submission_status": trip['submission_status'],
-                "completed_at": trip['completed_at'].isoformat() if trip['completed_at'] else None,
-                "submitted_at": trip['submitted_at'].isoformat() if trip['submitted_at'] else None,
-                "approved_at": trip['approved_at'].isoformat() if trip['approved_at'] else None,
+                "completed_at": safe_isoformat(trip['completed_at']) if trip['completed_at'] else None,
+                "submitted_at": safe_isoformat(trip['submitted_at']) if trip['submitted_at'] else None,
+                "approved_at": safe_isoformat(trip['approved_at']) if trip['approved_at'] else None,
                 "approval_comments": trip['approval_comments'],
-                "rejection_reason": trip['rejection_reason']
+                "rejection_reason": trip['rejection_reason'],
+                "justification": trip['justification']
             })
         
         return {
@@ -1185,8 +1232,8 @@ async def get_manager_completed_trips(
                 "employee_name": trip['employee_name'],
                 "trip_purpose": trip['trip_purpose'],
                 "destination_city": trip['destination_city'],
-                "start_date": trip['start_date'].isoformat() if trip['start_date'] else None,
-                "end_date": trip['end_date'].isoformat() if trip['end_date'] else None,
+                "start_date": safe_isoformat(trip['start_date']) if trip['start_date'] else None,
+                "end_date": safe_isoformat(trip['end_date']) if trip['end_date'] else None,
                 "duration_days": trip['duration_days'],
                 "designation": trip['designation'],
                 "city_tier": trip['city_tier'],
@@ -1198,11 +1245,12 @@ async def get_manager_completed_trips(
                 "budget_utilization": float(trip['budget_utilization']) if trip['budget_utilization'] else 0,
                 "trip_status": trip['trip_status'],
                 "submission_status": trip['submission_status'],
-                "completed_at": trip['completed_at'].isoformat() if trip['completed_at'] else None,
-                "submitted_at": trip['submitted_at'].isoformat() if trip['submitted_at'] else None,
-                "approved_at": trip['approved_at'].isoformat() if trip['approved_at'] else None,
+                "completed_at": safe_isoformat(trip['completed_at']) if trip['completed_at'] else None,
+                "submitted_at": safe_isoformat(trip['submitted_at']) if trip['submitted_at'] else None,
+                "approved_at": safe_isoformat(trip['approved_at']) if trip['approved_at'] else None,
                 "approval_comments": trip['approval_comments'],
-                "rejection_reason": trip['rejection_reason']
+                "rejection_reason": trip['rejection_reason'],
+                "justification": trip['justification']
             })
         
         return {
@@ -1219,3 +1267,4 @@ async def get_manager_completed_trips(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not fetch completed trips: {str(e)}"
         )
+

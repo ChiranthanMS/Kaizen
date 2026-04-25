@@ -7,11 +7,13 @@ const api = axios.create({
   baseURL: "http://localhost:8000",
 });
 
-// Add interceptor to include token in requests
+// Add interceptor to include token and no-cache headers in requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+    config.headers['Cache-Control'] = 'no-cache';
+    config.headers['Pragma'] = 'no-cache';
   }
   return config;
 });
@@ -24,7 +26,7 @@ function ProfilePage() {
 
   // Check authentication on component mount
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token) {
       navigate("/login");
       return;
@@ -42,7 +44,7 @@ function ProfilePage() {
       console.error("Error fetching profile:", err);
       if (err.response?.status === 401) {
         // Token expired or invalid
-        localStorage.removeItem("token");
+        sessionStorage.removeItem("token");
         navigate("/login");
       } else {
         setMessage("Error loading profile information.");
@@ -53,7 +55,7 @@ function ProfilePage() {
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
     navigate("/login");
   };
 

@@ -10,6 +10,7 @@ from models.budget_models import (
 from models.user_models import TokenData
 from services.budget_service import budget_service
 from dependencies.auth_dependencies import get_current_user
+from utils import clean_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +99,9 @@ async def validate_expense_against_budget(
         validation_result = budget_service.validate_expense_against_budget(
             session=session,
             expense_type=expense_type_enum,
-            amount=Decimal(str(amount)),
-            current_daily_usage=Decimal(str(current_daily_usage)),
-            current_monthly_usage=Decimal(str(current_monthly_usage))
+            amount=clean_decimal(amount),
+            current_daily_usage=clean_decimal(current_daily_usage),
+            current_monthly_usage=clean_decimal(current_monthly_usage)
         )
         
         return validation_result

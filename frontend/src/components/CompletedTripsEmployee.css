@@ -235,6 +235,69 @@
     line-height: 1.4;
 }
 
+.justification-input-section {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 15px;
+    background: rgba(52, 152, 219, 0.05);
+    border-radius: 8px;
+    border: 1px dashed #3498db;
+}
+
+.justification-input-section textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-family: inherit;
+    resize: vertical;
+    background: white;
+}
+
+.submit-justification-btn {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+    align-self: flex-end;
+}
+
+.submit-justification-btn:hover {
+    background: #2980b9;
+}
+
+.submit-justification-btn:disabled {
+    background: #95a5a6;
+    cursor: not-allowed;
+}
+
+.justification-box-display {
+    margin-top: 15px;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: #eef2f7;
+    border-left: 4px solid #3498db;
+}
+
+.justification-box-display strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #2c3e50;
+}
+
+.justification-box-display p {
+    margin: 0;
+    color: #34495e;
+    line-height: 1.4;
+}
+
 /* Modal Styles */
 .modal-overlay {
     position: fixed;
@@ -329,8 +392,9 @@
 }
 
 .detail-item span {
-    color: #2c3e50;
+    color: #1a202c;
     font-size: 1rem;
+    font-weight: 500;
 }
 
 .financial-summary {
@@ -383,7 +447,7 @@
 
 .timeline-label {
     font-weight: 600;
-    color: #34495e;
+    color: #2c3e50;
 }
 
 .comments-box, .rejection-box {

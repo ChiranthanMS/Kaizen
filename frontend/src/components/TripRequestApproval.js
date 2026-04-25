@@ -19,11 +19,13 @@ const TripRequestApproval = () => {
     const fetchPendingRequests = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/trip-budget/pending-requests', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -47,7 +49,7 @@ const TripRequestApproval = () => {
 
         try {
             setProcessingId(selectedRequest.trip_id);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             const response = await fetch('http://localhost:8000/trip-budget/approve-trip', {
                 method: 'POST',
@@ -83,7 +85,7 @@ const TripRequestApproval = () => {
 
         try {
             setProcessingId(selectedRequest.trip_id);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             const response = await fetch('http://localhost:8000/trip-budget/reject-trip', {
                 method: 'POST',
@@ -115,15 +117,15 @@ const TripRequestApproval = () => {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: 'USD'
+            currency: 'INR'
         }).format(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('en-IN', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
@@ -244,6 +246,18 @@ const TripRequestApproval = () => {
                                         {formatDate(request.created_at)}
                                     </span>
                                 </div>
+                                {request.rejection_reason && (
+                                    <div className="detail-row rejection-info">
+                                        <span className="detail-label">❌ Prev Reason:</span>
+                                        <span className="detail-value">{request.rejection_reason}</span>
+                                    </div>
+                                )}
+                                {request.justification && (
+                                    <div className="detail-row justification-info">
+                                        <span className="detail-label">📤 Justification:</span>
+                                        <span className="detail-value">{request.justification}</span>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="budget-breakdown">

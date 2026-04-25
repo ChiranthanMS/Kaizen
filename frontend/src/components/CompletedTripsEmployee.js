@@ -7,6 +7,8 @@ const CompletedTripsEmployee = () => {
     const [error, setError] = useState('');
     const [selectedTrip, setSelectedTrip] = useState(null);
     const [showDetails, setShowDetails] = useState(false);
+    const [justificationTexts, setJustificationTexts] = useState({});
+    const [submittingJustification, setSubmittingJustification] = useState(null);
 
     useEffect(() => {
         fetchCompletedTrips();
@@ -15,11 +17,13 @@ const CompletedTripsEmployee = () => {
     const fetchCompletedTrips = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/trip-budget/completed-trips', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -51,15 +55,15 @@ const CompletedTripsEmployee = () => {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: 'USD'
+            currency: 'INR'
         }).format(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('en-IN', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
@@ -74,6 +78,44 @@ const CompletedTripsEmployee = () => {
     const closeTripDetails = () => {
         setSelectedTrip(null);
         setShowDetails(false);
+    };
+
+    const handleSubmitJustification = async (tripId) => {
+        const justification = justificationTexts[tripId];
+        if (!justification || !justification.trim()) {
+            alert('Please provide a justification message.');
+            return;
+        }
+
+        try {
+            setSubmittingJustification(tripId);
+            const token = sessionStorage.getItem('token');
+            const response = await fetch('http://localhost:8000/trip-budget/submit-trip-justification', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    trip_id: tripId,
+                    justification: justification
+                })
+            });
+
+            if (response.ok) {
+                alert('✅ Justification submitted successfully! The trip status has been updated to pending for manager review.');
+                setJustificationTexts(prev => ({ ...prev, [tripId]: '' }));
+                fetchCompletedTrips();
+            } else {
+                const errorData = await response.json();
+                alert(`❌ Error: ${errorData.detail || 'Failed to submit justification'}`);
+            }
+        } catch (err) {
+            console.error('Error submitting justification:', err);
+            alert('❌ Failed to submit justification. Please try again.');
+        } finally {
+            setSubmittingJustification(null);
+        }
     };
 
     if (loading) {
@@ -196,6 +238,31 @@ const CompletedTripsEmployee = () => {
                                 <div className="rejection-reason">
                                     <strong>❌ Rejection Reason:</strong>
                                     <p>{trip.rejection_reason}</p>
+                                </div>
+                            )}
+
+                            {trip.justification && (
+                                <div className="justification-box-display">
+                                    <strong>📤 Your Justification:</strong>
+                                    <p>{trip.justification}</p>
+                                </div>
+                            )}
+
+                            {trip.submission_status === 'rejected' && (
+                                <div className="justification-input-section">
+                                    <textarea
+                                        placeholder="Provide your justification or response to the rejection reason..."
+                                        value={justificationTexts[trip.trip_id] || ''}
+                                        onChange={(e) => setJustificationTexts(prev => ({ ...prev, [trip.trip_id]: e.target.value }))}
+                                        rows="3"
+                                    />
+                                    <button 
+                                        onClick={() => handleSubmitJustification(trip.trip_id)}
+                                        className="submit-justification-btn"
+                                        disabled={submittingJustification === trip.trip_id}
+                                    >
+                                        {submittingJustification === trip.trip_id ? '⏳ Submitting...' : '📤 Submit Justification'}
+                                    </button>
                                 </div>
                             )}
                         </div>

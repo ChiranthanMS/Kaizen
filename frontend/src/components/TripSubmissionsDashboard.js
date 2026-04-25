@@ -16,11 +16,13 @@ const TripSubmissionsDashboard = () => {
     const fetchPendingSubmissions = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/trip-budget/pending-trip-submissions', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -40,11 +42,13 @@ const TripSubmissionsDashboard = () => {
     const fetchSubmissionDetails = async (submissionId) => {
         try {
             setActionLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch(`http://localhost:8000/trip-budget/trip-submission-details/${submissionId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -69,7 +73,7 @@ const TripSubmissionsDashboard = () => {
     const handleApproveSubmission = async (submissionId, comments = '') => {
         try {
             setActionLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/trip-budget/approve-trip-submission', {
                 method: 'POST',
                 headers: {
@@ -108,7 +112,7 @@ const TripSubmissionsDashboard = () => {
 
         try {
             setActionLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/trip-budget/reject-trip-submission', {
                 method: 'POST',
                 headers: {
@@ -286,11 +290,23 @@ const TripSubmissionsDashboard = () => {
                                             <div><strong>Total Spent:</strong> {formatCurrency(submissionDetails.submission_details.total_amount)}</div>
                                             <div><strong>Utilization:</strong> 
                                                 <span style={{ color: getBudgetUtilizationColor(submissionDetails.submission_details.budget_utilization) }}>
-                                                    {submissionDetails.submission_details.budget_utilization.toFixed(1)}%
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
+                                                     {submissionDetails.submission_details.budget_utilization.toFixed(1)}%
+                                                 </span>
+                                             </div>
+                                             {submissionDetails.submission_details.rejection_reason && (
+                                                 <div className="summary-reason rejection">
+                                                     <strong>❌ Previous Rejection Reason:</strong>
+                                                     <p>{submissionDetails.submission_details.rejection_reason}</p>
+                                                 </div>
+                                             )}
+                                             {submissionDetails.submission_details.justification && (
+                                                 <div className="summary-reason justification">
+                                                     <strong>📤 Employee Justification:</strong>
+                                                     <p>{submissionDetails.submission_details.justification}</p>
+                                                 </div>
+                                             )}
+                                         </div>
+                                     </div>
 
                                     {/* Bills List */}
                                     <div className="bills-section">
@@ -338,29 +354,31 @@ const TripSubmissionsDashboard = () => {
                                                 rows="3"
                                             />
                                             <div className="action-buttons">
-                                                <button 
-                                                    onClick={() => {
-                                                        const comments = document.getElementById('approval-comments').value;
-                                                        handleApproveSubmission(selectedSubmission.submission_id, comments);
-                                                    }}
-                                                    className="approve-btn"
-                                                    disabled={actionLoading}
-                                                >
-                                                    ✅ Approve All Bills
-                                                </button>
-                                                <button 
-                                                    onClick={() => {
-                                                        const reason = prompt('Please provide a reason for rejection:');
-                                                        if (reason) {
-                                                            handleRejectSubmission(selectedSubmission.submission_id, reason);
-                                                        }
-                                                    }}
-                                                    className="reject-btn"
-                                                    disabled={actionLoading}
-                                                >
-                                                    ❌ Reject All Bills
-                                                </button>
-                                            </div>
+                                                 <button 
+                                                     onClick={() => {
+                                                         const comments = document.getElementById('approval-comments').value;
+                                                         handleApproveSubmission(selectedSubmission.submission_id, comments);
+                                                     }}
+                                                     className="approve-btn"
+                                                     disabled={actionLoading}
+                                                 >
+                                                     ✅ Approve All Bills
+                                                 </button>
+                                                 <button 
+                                                     onClick={() => {
+                                                         const reason = document.getElementById('approval-comments').value;
+                                                         if (!reason || reason.trim() === '') {
+                                                             alert('Please provide a reason in the comments box for rejection');
+                                                             return;
+                                                         }
+                                                         handleRejectSubmission(selectedSubmission.submission_id, reason);
+                                                     }}
+                                                     className="reject-btn"
+                                                     disabled={actionLoading}
+                                                 >
+                                                     ❌ Reject All Bills
+                                                 </button>
+                                             </div>
                                         </div>
                                     </div>
                                 </div>

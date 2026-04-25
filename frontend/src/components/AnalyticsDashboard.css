@@ -9,9 +9,7 @@
   font-size: 28px;
   font-weight: 700;
   text-align: center;
-  background: linear-gradient(90deg, #00e5ff, #7c4dff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #00e5ff;
 }
 
 .glass-card {

@@ -39,9 +39,13 @@ const AnalyticsDashboard = () => {
   const fetchMetrics = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const response = await axios.get('/analytics/dashboard-summary', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
       setMetrics(response.data);
     } catch (err) {

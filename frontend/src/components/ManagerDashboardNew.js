@@ -205,9 +205,9 @@ function ManagerDashboardNew() {
   const departments = [...new Set(allEmployees.map(emp => emp.department).filter(Boolean))];
 
   // Utility functions
-  const formatCurrency = (amount, currency = 'USD') => {
+  const formatCurrency = (amount, currency = 'INR') => {
     if (amount === null || amount === undefined) return 'N/A';
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: currency
     }).format(amount);

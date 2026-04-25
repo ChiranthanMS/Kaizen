@@ -83,20 +83,20 @@
     margin-bottom: 20px;
 }
 
-.detail-row {
+.pending-bills-manager .detail-row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
 }
 
-.detail-label {
+.pending-bills-manager .detail-label {
     color: #aaa;
     font-size: 14px;
     flex-shrink: 0;
     margin-right: 15px;
 }
 
-.detail-value {
+.pending-bills-manager .detail-value {
     color: #fff;
     font-size: 14px;
     text-align: right;

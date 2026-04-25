@@ -19,11 +19,13 @@ const PendingBillsManager = () => {
     const fetchPendingBills = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await fetch('http://localhost:8000/manager/pending-bills?page=1&page_size=50', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
@@ -47,7 +49,7 @@ const PendingBillsManager = () => {
 
         try {
             setProcessingId(selectedBill.id);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             const response = await fetch(`http://localhost:8000/manager/bills/${selectedBill.id}/approve?remarks=${encodeURIComponent(approvalComments || 'Approved by manager')}`, {
                 method: 'POST',
@@ -79,7 +81,7 @@ const PendingBillsManager = () => {
 
         try {
             setProcessingId(selectedBill.id);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             
             const response = await fetch(`http://localhost:8000/manager/bills/${selectedBill.id}/reject?remarks=${encodeURIComponent(rejectionReason)}`, {
                 method: 'POST',
@@ -106,16 +108,16 @@ const PendingBillsManager = () => {
         }
     };
 
-    const formatCurrency = (amount, currency = 'USD') => {
-        return new Intl.NumberFormat('en-US', {
+    const formatCurrency = (amount, currency = 'INR') => {
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: currency || 'USD'
+            currency: currency || 'INR'
         }).format(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('en-IN', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'

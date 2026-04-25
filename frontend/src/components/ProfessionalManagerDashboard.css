@@ -35,10 +35,6 @@
     font-weight: 700;
     color: #2c3e50;
     margin: 0 0 5px 0;
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
 }
 
 .welcome-text {
@@ -452,7 +448,7 @@
 }
 
 .member-email {
-    color: #7f8c8d;
+    color: #4a5568;
     font-size: 0.9rem;
     margin: 0;
 }
@@ -473,7 +469,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px solid #ecf0f1;
+    border-bottom: 1px solid #e2e8f0;
 }
 
 .stat-row:last-child {
@@ -481,13 +477,15 @@
 }
 
 .stat-label {
-    color: #7f8c8d;
+    color: #1a202c; /* Very dark for maximum visibility */
     font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
 }
 
 .stat-value {
-    color: #2c3e50;
-    font-weight: 600;
+    color: #2c3e50; /* Dark blue-grey */
+    font-weight: 700;
 }
 
 .stat-value.pending {

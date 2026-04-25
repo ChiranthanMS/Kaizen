@@ -18,11 +18,11 @@ class RegexBillParser:
         
         # Amount patterns (various formats)
         self.amount_patterns = [
-            re.compile(r'(?:total|amount|sum|bill|pay|due)[\s:]*(?:rs\.?|₹|inr)?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
-            re.compile(r'(?:₹|rs\.?|inr)\s*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
-            re.compile(r'(\d+(?:,\d{3})*(?:\.\d{2})?)(?:\s*(?:₹|rs\.?|inr))', re.IGNORECASE),
-            re.compile(r'total[\s:]*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
-            re.compile(r'amount[\s:]*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
+            re.compile(r'(?:total|amount|sum|bill|pay|due)[\s\w:]*(?:rs\.?|₹|inr|\$|€|£|chf)?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
+            re.compile(r'(?:₹|rs\.?|inr|\$|€|£|chf)\s*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
+            re.compile(r'(\d+(?:,\d{3})*(?:\.\d{2})?)(?:\s*(?:₹|rs\.?|inr|\$|€|£|chf))', re.IGNORECASE),
+            re.compile(r'total[\sA-Za-z:]*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
+            re.compile(r'amount[\sA-Za-z:]*(\d+(?:,\d{3})*(?:\.\d{2})?)', re.IGNORECASE),
         ]
         
         # Date patterns (various formats)
@@ -67,8 +67,10 @@ class RegexBillParser:
         
         # Vendor/merchant patterns
         self.vendor_patterns = [
-            re.compile(r'^([A-Z][A-Z\s&.,\'-]+)(?:\n|$)', re.MULTILINE),  # First line in caps
-            re.compile(r'(?:restaurant|hotel|cafe|store|shop|mart|ltd|pvt|inc)[\s:]*([a-z\s&.,\'-]+)', re.IGNORECASE),
+            re.compile(r'^([A-Z][A-Z\s&.,\'-]{3,})(?:\n|$)', re.MULTILINE),  # First line in caps
+            re.compile(r'(?:restaurant|hotel|cafe|store|shop|mart|ltd|pvt|inc|solutions|technologies|services|associates)[\s:]*([a-z\s&.,\'-]{3,})', re.IGNORECASE),
+            re.compile(r'([a-z\s&.,\'-]{3,})\s+(?:bill|receipt|invoice)', re.IGNORECASE),
+            re.compile(r'(?:gstin|pan|vat)[\s:]*[a-z0-9]+', re.IGNORECASE), # Used to find vendor name nearby
         ]
         
         # Category detection patterns
@@ -119,16 +121,17 @@ class RegexBillParser:
         return result
 
     def _clean_text(self, text: str) -> str:
-        """Clean and normalize text for better pattern matching"""
+        """Clean and normalize text for better pattern matching while preserving lines"""
         if not text:
             return ""
         
-        # Remove extra whitespace and normalize
-        text = re.sub(r'\s+', ' ', text.strip())
+        # Remove multiple spaces but preserve newlines
+        text = re.sub(r'[ \t]+', ' ', text.strip())
+        # Remove multiple newlines
+        text = re.sub(r'\n+', '\n', text)
         
         # Fix common OCR errors
         text = text.replace('|', 'I')  # Common OCR mistake
-        text = text.replace('0', 'O')  # In some contexts
         
         return text
 
@@ -162,15 +165,16 @@ class RegexBillParser:
                     if len(groups) == 3:
                         if groups[0].isdigit() and len(groups[0]) == 4:  # YYYY-MM-DD format
                             year, month, day = groups
+                        elif groups[1].isalpha():  # DD MMM YYYY format
+                            day, month_name, year = groups
+                            month = str(list(calendar.month_abbr).index(month_name[:3].title()))
+                        elif groups[0].isalpha():  # MMM DD YYYY format
+                            month_name, day, year = groups
+                            month = str(list(calendar.month_abbr).index(month_name[:3].title()))
                         elif groups[2].isdigit() and len(groups[2]) == 4:  # DD-MM-YYYY format
                             day, month, year = groups
-                        else:  # Month name format
-                            if groups[0].isalpha():  # MMM DD YYYY
-                                month_name, day, year = groups
-                                month = str(list(calendar.month_abbr).index(groups[0][:3].title()))
-                            else:  # DD MMM YYYY
-                                day, month_name, year = groups
-                                month = str(list(calendar.month_abbr).index(groups[1][:3].title()))
+                        else:
+                            continue
                         
                         # Validate and format
                         year = int(year)
@@ -270,24 +274,43 @@ class RegexBillParser:
         return "other"
 
     def _extract_vendor(self, text: str) -> Optional[str]:
-        """Extract vendor/merchant name"""
+        """Extract vendor/merchant name with improved heuristic"""
         lines = text.split('\n')
         
-        # Try first few lines for vendor name
-        for i, line in enumerate(lines[:3]):
+        # 1. Try first 5 lines for vendor name (skipping very short lines)
+        for i, line in enumerate(lines[:5]):
             line = line.strip()
-            if len(line) > 3 and len(line) < 100:
-                # Check if it looks like a business name
-                if re.search(r'[A-Z][a-z]', line) and not re.search(r'\d{4}', line):
+            # Ignore if it contains amount symbols or common keywords
+            if (len(line) > 3 and len(line) < 100 and 
+                not re.search(r'₹|\$|total|date|time|tax|inv|#', line, re.IGNORECASE)):
+                
+                # Check if it looks like a business name (starts with uppercase)
+                if re.match(r'^[A-Z]', line):
                     return line
         
-        # Try regex patterns
+        # 2. Try regex patterns
         for pattern in self.vendor_patterns:
+            # Skip the helper pattern for gstin
+            if 'gstin' in pattern.pattern.lower():
+                # If we find GSTIN, the vendor is usually 1-2 lines above
+                match = pattern.search(text)
+                if match:
+                    pos = match.start()
+                    text_before = text[:pos].strip().split('\n')
+                    if text_before:
+                        potential = text_before[-1].strip()
+                        if len(potential) > 3 and len(potential) < 50:
+                            return potential
+                continue
+
             match = pattern.search(text)
             if match:
-                vendor = match.group(1).strip()
-                if len(vendor) > 3 and len(vendor) < 100:
-                    return vendor
+                try:
+                    vendor = match.group(1).strip()
+                    if len(vendor) > 3 and len(vendor) < 100:
+                        return vendor
+                except (IndexError, AttributeError):
+                    continue
         
         return None
 
